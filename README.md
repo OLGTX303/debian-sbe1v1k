@@ -53,6 +53,15 @@ bash scripts/fetch-sources.sh          # checks host tools, fetches public
 `fetch-sources.sh` tells you exactly what it still needs and where to put it,
 then re-run it to have it verify and patch. Nothing it does needs root.
 
+Every script takes its QSDK inputs from one variable, `QSDK`, pointing at the
+top of a QSDK tree — the directory holding `qca/`, `build_dir/` and
+`staging_dir/`. It is auto-detected from `../qsdk` or `../qsdk14-work-ucgf/qsdk`
+if you leave it unset, and everything else is derived:
+
+```bash
+QSDK=/path/to/qsdk bash scripts/fetch-sources.sh
+```
+
 ## Building
 
 Needs `debootstrap`, `qemu-user-static`, `squashfs-tools` and root:

@@ -16,7 +16,23 @@ set -euo pipefail
 
 WS="$(cd "$(dirname "$0")/.." && pwd)"
 VENDOR="${VENDOR:-$WS/../vendor}"
-QSDK_ROOT="${QSDK_ROOT:-$WS/../qsdk}"
+# QSDK is the top level of a QSDK tree — the directory holding qca/, build_dir/
+# and staging_dir/. Everything else is derived from it, because three scripts
+# used to define QSDK_ROOT as three different things (the top level here, a
+# build_dir staging root there, a staging_dir one elsewhere), so setting it once
+# and running them all broke two of the three.
+#
+# Both the plain layout and a checkout named after its branch are probed, so an
+# unset QSDK usually resolves on its own.
+QSDK="${QSDK:-}"
+if [[ -z "$QSDK" ]]; then
+    for _candidate in "$WS/../qsdk" "$WS/../qsdk14-work-ucgf/qsdk"; do
+        [[ -d "$_candidate/qca" ]] && QSDK="$(cd "$_candidate" && pwd)" && break
+    done
+fi
+QSDK="${QSDK:-$WS/../qsdk}"
+# fetch-sources works on the tree itself, so QSDK is what it needs.
+QSDK_ROOT="$QSDK"
 
 note() { echo "[*] $*"; }
 warn() { echo "[!] $*" >&2; }

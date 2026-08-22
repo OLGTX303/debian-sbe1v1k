@@ -8,7 +8,23 @@ ROOTFS="${ROOTFS:-$WS/rootfs}"
 GATEWAY="$WS/gateway"
 
 # OpenWrt/QSDK staging root holding the MLO-capable hostapd (wpad) and musl.
-QSDK_ROOT="${QSDK_ROOT:-$WS/../qsdk14-work-ucgf/qsdk/build_dir/target-aarch64_cortex-a73+neon-vfpv4_musl/root-ipq95xx}"
+# QSDK is the top level of a QSDK tree — the directory holding qca/, build_dir/
+# and staging_dir/. Everything else is derived from it, because three scripts
+# used to define QSDK_ROOT as three different things (the top level here, a
+# build_dir staging root there, a staging_dir one elsewhere), so setting it once
+# and running them all broke two of the three.
+#
+# Both the plain layout and a checkout named after its branch are probed, so an
+# unset QSDK usually resolves on its own.
+QSDK="${QSDK:-}"
+if [[ -z "$QSDK" ]]; then
+    for _candidate in "$WS/../qsdk" "$WS/../qsdk14-work-ucgf/qsdk"; do
+        [[ -d "$_candidate/qca" ]] && QSDK="$(cd "$_candidate" && pwd)" && break
+    done
+fi
+QSDK="${QSDK:-$WS/../qsdk}"
+# The build_dir root: this is where the MLO-capable wpad is built.
+QSDK_ROOT="${QSDK_ROOT:-$QSDK/build_dir/target-aarch64_cortex-a73+neon-vfpv4_musl/root-ipq95xx}"
 # Optional directory of Inter/Lato .woff2 webfonts. Left empty by default: the
 # UI falls back to the platform UI font, and no font files are redistributed
 # with this project. Point it at your own copy if you want them embedded.

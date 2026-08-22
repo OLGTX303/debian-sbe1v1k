@@ -10,11 +10,27 @@ OUT="${OUT:-$WS/debian-bookworm-sbe1v1k.ext4}"
 SIZE="${SIZE:-6144M}"
 MIRROR="${MIRROR:-http://deb.debian.org/debian}"
 BOARD_FW="${BOARD_FW:-$WS/../uinif_u7pro_serious_fw/re/rootfs_full/lib/firmware}"
-QSDK_ROOT="${QSDK_ROOT:-$WS/../qsdk14-work-ucgf/qsdk/staging_dir/target-aarch64_cortex-a73+neon-vfpv4_musl/root-ipq95xx}"
-QSDK_MODULES="${QSDK_MODULES:-$WS/../qsdk14-work-ucgf/qsdk/build_dir/target-aarch64_cortex-a73+neon-vfpv4_musl/root-ipq95xx/lib/modules/6.6.116+}"
+# QSDK is the top level of a QSDK tree — the directory holding qca/, build_dir/
+# and staging_dir/. Everything else is derived from it, because three scripts
+# used to define QSDK_ROOT as three different things (the top level here, a
+# build_dir staging root there, a staging_dir one elsewhere), so setting it once
+# and running them all broke two of the three.
+#
+# Both the plain layout and a checkout named after its branch are probed, so an
+# unset QSDK usually resolves on its own.
+QSDK="${QSDK:-}"
+if [[ -z "$QSDK" ]]; then
+    for _candidate in "$WS/../qsdk" "$WS/../qsdk14-work-ucgf/qsdk"; do
+        [[ -d "$_candidate/qca" ]] && QSDK="$(cd "$_candidate" && pwd)" && break
+    done
+fi
+QSDK="${QSDK:-$WS/../qsdk}"
+# The staging_dir root: firmware, INI files, the musl userland.
+QSDK_ROOT="${QSDK_ROOT:-$QSDK/staging_dir/target-aarch64_cortex-a73+neon-vfpv4_musl/root-ipq95xx}"
+QSDK_MODULES="${QSDK_MODULES:-$QSDK/build_dir/target-aarch64_cortex-a73+neon-vfpv4_musl/root-ipq95xx/lib/modules/6.6.116+}"
 KERNEL_RELEASE="${KERNEL_RELEASE:-6.6.116}"
 QSDK_FIRMWARE="${QSDK_FIRMWARE:-$QSDK_ROOT/lib/firmware}"
-QSDK_INI="${QSDK_INI:-$WS/../qsdk14-work-ucgf/qsdk/qca/feeds/wlan-open/mac80211/files/ini}"
+QSDK_INI="${QSDK_INI:-$QSDK/qca/feeds/wlan-open/mac80211/files/ini}"
 PORTAL_ASSETS="${PORTAL_ASSETS:-$WS/../ucgf_controller_port/rootfs_ucgf/usr/share/unifi-core/app/node_modules/@ubnt/unifi-portal/dist/local}"
 PORTAL_INDEX="${PORTAL_INDEX:-$WS/portal/index.html}"
 QEMU="${QEMU:-$(command -v qemu-aarch64-static || command -v qemu-aarch64 || true)}"
