@@ -1,0 +1,538 @@
+SBE1V1K board support for the QSDK 6.6 device tree.
+
+Adds the parts of the board this project depends on and reads at runtime:
+
+  * pwm-fan on SoC PWM channel 3 with cooling-levels <36 72 128 255>, bound to
+    the top-glue-thermal zone (tsens 15) at 40/50/65/80 C. sbegw's fan policy
+    reads these values rather than inventing its own; see gateway/sbegw/hwd.py.
+  * Thermal zones and trip points for the CPU cluster, NSS, UBI and WCSS.
+  * Port wiring: eth0/eth1 QCA8075 1G, eth2 QCA8081 2.5G, eth3 RTL8261N 10G.
+
+The tri-colour status LED (gpio-leds red/green/blue on GPIOs 44/45/56) is
+already in the base device tree and is NOT part of this patch; sbegw's LED
+policy just drives it.
+
+Apply against qca/src/linux-6.6 in a QSDK tree:
+
+    cd qca/src/linux-6.6
+    patch -p1 < .../patches/0001-ipq9570-sbe1v1k-board.patch
+
+The base file is Qualcomm's; only the diff is distributed here.
+---
+--- a/arch/arm64/boot/dts/qcom/ipq9570-sbe1v1k.dts
++++ b/arch/arm64/boot/dts/qcom/ipq9570-sbe1v1k.dts
+@@ -2,6 +2,7 @@
+ 
+ /dts-v1/;
+ 
++#include "ipq9574-qcn9224-default-memory.dtsi"
+ #include "ipq9574.dtsi"
+ 
+ #include <dt-bindings/gpio/gpio.h>
+@@ -26,9 +27,16 @@
+ 	};
+ 
+ 	reserved-memory {
+-		tzapp:tzapp@49B00000 {
+-			no-map;
+-			reg = <0x0 0x49B00000 0x0 0x00600000>;
++		#address-cells = <2>;
++		#size-cells = <2>;
++		ranges;
++
++		wifi_cma: wifi-cma {
++			compatible = "shared-dma-pool";
++			reusable;
++			size = <0x0 0x08000000>;
++			alignment = <0x0 0x100000>;
++			linux,cma-default;
+ 		};
+ 	};
+ 
+@@ -198,12 +206,9 @@
+ };
+ 
+ &sdhc_1 {
++	/delete-property/ supports-cqe;
+ 	bus-width = <8>;
+-	max-frequency = <384000000>;
+-	mmc-ddr-1_8v;
+-	mmc-hs200-1_8v;
+-	mmc-hs400-1_8v;
+-	mmc-hs400-enhanced-strobe;
++	max-frequency = <48000000>;
+ 	pinctrl-0 = <&sdc_default_state>;
+ 	pinctrl-names = "default";
+ 	status = "okay";
+@@ -382,101 +387,49 @@
+ 	status = "okay";
+ };
+ 
+-&qcom_ppe {
+-	status = "okay";
+ 
+-	ethernet-ports {
+-		#address-cells = <1>;
+-		#size-cells = <0>;
+ 
+-		port@3 {
+-			reg = <3>;
+-			phy-mode = "qsgmii";
+-			phy-handle = <&qca8075_18>;
+-			pcs-handle = <&pcs0_ch2>;
+-			managed = "in-band-status";
+-			label = "lan2";
+-
+-			nvmem-cells = <&ethaddr 1>;
+-			nvmem-cell-names = "mac-address";
+-
+-			clocks = <&nsscc NSS_CC_PORT3_MAC_CLK>,
+-				 <&nsscc NSS_CC_PORT3_RX_CLK>,
+-				 <&nsscc NSS_CC_PORT3_TX_CLK>;
+-			clock-names = "mac", "rx", "tx";
+-
+-			resets = <&nsscc PORT3_MAC_ARES>,
+-				 <&nsscc PORT3_RX_ARES>,
+-				 <&nsscc PORT3_TX_ARES>;
+-			reset-names = "mac", "rx", "tx";
+-		};
+-
+-		port@4 {
+-			reg = <4>;
+-			phy-mode = "qsgmii";
+-			phy-handle = <&qca8075_19>;
+-			pcs-handle = <&pcs0_ch3>;
+-			managed = "in-band-status";
+-			label = "lan3";
+-
+-			nvmem-cells = <&ethaddr 1>;
+-			nvmem-cell-names = "mac-address";
+ 
+-			clocks = <&nsscc NSS_CC_PORT4_MAC_CLK>,
+-				 <&nsscc NSS_CC_PORT4_RX_CLK>,
+-				 <&nsscc NSS_CC_PORT4_TX_CLK>;
+-			clock-names = "mac", "rx", "tx";
+-
+-			resets = <&nsscc PORT4_MAC_ARES>,
+-				 <&nsscc PORT4_RX_ARES>,
+-				 <&nsscc PORT4_TX_ARES>;
+-			reset-names = "mac", "rx", "tx";
+-		};
+-
+-		port@5 {
+-			reg = <5>;
+-			phy-mode = "usxgmii";
+-			phy-handle = <&qca8081_28>;
+-			pcs-handle = <&pcs1_ch0>;
+-			managed = "in-band-status";
+-			label = "lan1";
++/* QSDK14 ESS/PPE port-to-PHY map for the SBE1V1K four-port layout. */
++&ess_switch {
++	 switch_cpu_bmp = <0x1>;
++	 switch_lan_bmp = <0x38>;
++	 switch_wan_bmp = <0x40>;
++	 switch_mac_mode = <0x0b>;
++	 switch_mac_mode1 = <0xd>;
++	 switch_mac_mode2 = <0xd>;
++	 bm_tick_mode = <0>;
++	 tm_tick_mode = <0>;
++
++	 qcom,port_phyinfo {
++		 port@0 {
++			 port_id = <3>;
++			 phy_address = <18>;
++			 phy-handle = <&qca8075_18>;
++			 phy-mode = "qsgmii";
++		 };
++		 port@1 {
++			 port_id = <4>;
++			 phy_address = <19>;
++			 phy-handle = <&qca8075_19>;
++			 phy-mode = "qsgmii";
++		 };
++		 port@2 {
++			 port_id = <5>;
++			 phy_address = <28>;
++			 phy-handle = <&qca8081_28>;
++			 phy-mode = "usxgmii";
++			 ethernet-phy-ieee802.3-c45;
++		 };
++		 port@3 {
++			 port_id = <6>;
++			 phy_address = <0>;
++			 phy-handle = <&rtl8261be_0>;
++			 phy-mode = "usxgmii";
++			 ethernet-phy-ieee802.3-c45;
++		 };
++	 };
+ 
+-			nvmem-cells = <&ethaddr 1>;
+-			nvmem-cell-names = "mac-address";
+-
+-			clocks = <&nsscc NSS_CC_PORT5_MAC_CLK>,
+-				 <&nsscc NSS_CC_PORT5_RX_CLK>,
+-				 <&nsscc NSS_CC_PORT5_TX_CLK>;
+-			clock-names = "mac", "rx", "tx";
+-
+-			resets = <&nsscc PORT5_MAC_ARES>,
+-				 <&nsscc PORT5_RX_ARES>,
+-				 <&nsscc PORT5_TX_ARES>;
+-			reset-names = "mac", "rx", "tx";
+-		};
+-
+-		port@6 {
+-			reg = <6>;
+-			phy-mode = "usxgmii";
+-			phy-handle = <&rtl8261be_0>;
+-			pcs-handle = <&pcs2_ch0>;
+-			managed = "in-band-status";
+-			label = "wan";
+-
+-			nvmem-cells = <&ethaddr 0>;
+-			nvmem-cell-names = "mac-address";
+-
+-			clocks = <&nsscc NSS_CC_PORT6_MAC_CLK>,
+-				 <&nsscc NSS_CC_PORT6_RX_CLK>,
+-				 <&nsscc NSS_CC_PORT6_TX_CLK>;
+-			clock-names = "mac", "rx", "tx";
+-
+-			resets = <&nsscc PORT6_MAC_ARES>,
+-				 <&nsscc PORT6_RX_ARES>,
+-				 <&nsscc PORT6_TX_ARES>;
+-			reset-names = "mac", "rx", "tx";
+-		};
+-	};
+ };
+ 
+ &mdio {
+@@ -515,6 +468,31 @@
+ 		reset-gpios = <&tlmm 52 GPIO_ACTIVE_LOW>;
+ 		reset-deassert-us = <10000>;
+ 
++		/* eth2 (2.5G) LEDs are driven by Linux, not by the vendor register
++		 * blob. The netdev trigger bound in /etc/config/system gives proper
++		 * link/activity behaviour here, and unlike the 10G port this PHY has
++		 * full LED support in the qca808x driver.
++		 *
++		 * Two kernel fixes are what make this work at all on 6.6:
++		 *  - of_phy_led() now honours "default-state", so the LED is forced
++		 *    off at probe instead of keeping its power-on value;
++		 *  - qca808x_led_parse_netdev() now maps TRIGGER_NETDEV_LINK onto the
++		 *    per-speed hardware bits, so "link" actually gates on carrier.
++		 *
++		 * active-low IS required here. The stock ETH_led_control.sh writes
++		 * 0x46 to the polarity register 0x901a (bit 6 =
++		 * QCA808X_LED_ACTIVE_HIGH) in its all_on(), which reads like the
++		 * board is active high - but on hardware that leaves both LEDs lit
++		 * whenever the LED logic says "off". With active-low (driver clears
++		 * bit 6) the LEDs track link and traffic correctly. Measured
++		 * behaviour wins over the inference from the vendor script.
++		 *
++		 * Polarity is global to the PHY, so both LEDs must agree - the
++		 * driver rejects a mismatch.
++		 *
++		 * /etc/init.d/eth-leds deliberately skips PHY 0x1c for the same
++		 * reason - two owners writing LED_CTRL would fight each other.
++		 */
+ 		leds {
+ 			#address-cells = <1>;
+ 			#size-cells = <0>;
+@@ -522,41 +500,55 @@
+ 			led@0 {
+ 				reg = <0>;
+ 				color = <LED_COLOR_ID_YELLOW>;
+-				default-state = "keep";
+ 				function = LED_FUNCTION_LAN;
++				default-state = "off";
++				linux,default-trigger = "netdev";
+ 				active-low;
+ 			};
+ 
+ 			led@2 {
+ 				reg = <2>;
+ 				color = <LED_COLOR_ID_GREEN>;
+-				default-state = "keep";
+ 				function = LED_FUNCTION_LAN;
++				default-state = "off";
++				linux,default-trigger = "netdev";
+ 				active-low;
+ 			};
+ 		};
+ 	};
+ };
+ 
+-&ref_48mhz_clk {
+-	clock-div = <1>;
+-	clock-mult = <1>;
++
++&xo {
++	clock-frequency = <48000000>;
++};
++/* Per-radio host DDR regions. Without these ath12k falls back to the shared
++ * 128 MB wifi-cma pool and only one of the three QCN9274s wins the ~28 MB
++ * target-memory allocation ("qmi failed to alloc target memory" /
++ * "host-ddr-mem not available in dts"). Declared disabled in
++ * ipq9574-qcn9224-default-memory.dtsi, so switch them on here.
++ */
++&qcn9224_pcie1 {
++	status = "ok";
+ };
+ 
+-&xo_board_clk {
+-	clock-div = <2>;
+-	clock-mult = <1>;
++&qcn9224_pcie2 {
++	status = "ok";
+ };
+ 
+-&xo_clk {
+-	clock-frequency = <48000000>;
++&qcn9224_pcie3 {
++	status = "ok";
++};
++
++&mlo_global_mem0 {
++	status = "ok";
+ };
+ 
+ &pcie1_phy {
+ 	status = "okay";
+ };
+ 
+-&pcie1 {
++&pcie1_x1 {
+ 	pinctrl-0 = <&pcie1_default>;
+ 	pinctrl-names = "default";
+ 
+@@ -576,6 +568,19 @@
+ 			reg = <0x0 0x0 0x0 0x0 0x0>;
+ 			qcom,calibration-variant = "Askey-SBE1V1K_1";
+ 
++			/* The BDF board id is unprovisioned in OTP on this board
++			 * and reads back 0xFF, so the board-2.bin lookup fails.
++			 * QSDK ath12k prefers qcom,board_id from DT; the values
++			 * come from the stock Askey DTB (wifi5/6/7 board_id).
++			 */
++			qcom,board_id = <0x01>;
++			memory-region = <&qcn9224_pcie1>, <&mhi_region1>,
++					<&mlo_global_mem0>;
++			memory-region-names = "host-ddr-mem", "mhi-region",
++						      "mlo-global-mem";
++			qcom,caldb_offset = <0x1100000>;
++			qcom,caldb_size = <0x800000>;
++
+ 			nvmem-cells = <&ethaddr (-3)>;
+ 			nvmem-cell-names = "mac-address";
+ 
+@@ -607,7 +612,7 @@
+ 	status = "okay";
+ };
+ 
+-&pcie2 {
++&pcie2_x2 {
+ 	pinctrl-0 = <&pcie2_default>;
+ 	pinctrl-names = "default";
+ 
+@@ -628,6 +633,14 @@
+ 			qcom,calibration-variant = "Askey-SBE1V1K_4";
+ 			qcom,wsi-controller;
+ 
++			qcom,board_id = <0x04>;
++			memory-region = <&qcn9224_pcie2>, <&mhi_region2>,
++					<&mlo_global_mem0>;
++			memory-region-names = "host-ddr-mem", "mhi-region",
++						      "mlo-global-mem";
++			qcom,caldb_offset = <0x1100000>;
++			qcom,caldb_size = <0x800000>;
++
+ 			nvmem-cells = <&ethaddr (-1)>;
+ 			nvmem-cell-names = "mac-address";
+ 
+@@ -659,7 +672,7 @@
+ 	status = "okay";
+ };
+ 
+-&pcie3 {
++&pcie3_x2 {
+ 	pinctrl-0 = <&pcie3_default>;
+ 	pinctrl-names = "default";
+ 
+@@ -680,6 +693,14 @@
+ 			reg = <0x0 0x0 0x0 0x0 0x0>;
+ 			qcom,calibration-variant = "Askey-SBE1V1K_2";
+ 
++			qcom,board_id = <0x02>;
++			memory-region = <&qcn9224_pcie3>, <&mhi_region3>,
++					<&mlo_global_mem0>;
++			memory-region-names = "host-ddr-mem", "mhi-region",
++						      "mlo-global-mem";
++			qcom,caldb_offset = <0x1100000>;
++			qcom,caldb_size = <0x800000>;
++
+ 			nvmem-cells = <&ethaddr (-2)>;
+ 			nvmem-cell-names = "mac-address";
+ 
+@@ -706,3 +727,163 @@
+ 		};
+ 	};
+ };
++
++
++/* SBE1V1K QSDK14 NSS-DP/EDMA host configuration, ported from IPQ9574 RDP DTS. */
++&soc {
++	/*
++	 * Only PPE ports 3-6 are wired on this board (see qcom,port_phyinfo
++	 * under &ess_switch). dp1/dp2 used to be declared here, which created
++	 * eth0/eth1 with nothing behind them - the driver logged
++	 * "No PPE port 1 node found" / "Phylink setup failed" and left two
++	 * dead netdevs in the interface list. They are intentionally omitted,
++	 * so the netdevs now line up one-to-one with the four physical ports:
++	 *
++	 *   eth0 - dp3 - QCA8075 phy 18 (1G)
++	 *   eth1 - dp4 - QCA8075 phy 19 (1G)
++	 *   eth2 - dp5 - QCA8081 phy 28 (2.5G)
++	 *   eth3 - dp6 - RTL8261N phy 0  (10G, WAN)
++	 */
++	dp3 {
++				device_type = "network";
++				compatible = "qcom,nss-dp";
++				qcom,id = <3>;
++				reg = <0x3a001400 0x200>;
++				qcom,mactype = <0>;
++				local-mac-address = [000000000000];
++				qcom,ppe-offload-disabled = <1>;
++				nvmem-cells = <&ethaddr 1>;
++				nvmem-cell-names = "mac-address";
++			};
++
++	dp4 {
++				device_type = "network";
++				compatible = "qcom,nss-dp";
++				qcom,id = <4>;
++				reg = <0x3a001600 0x200>;
++				qcom,mactype = <0>;
++				local-mac-address = [000000000000];
++				qcom,ppe-offload-disabled = <1>;
++				nvmem-cells = <&ethaddr 2>;
++				nvmem-cell-names = "mac-address";
++			};
++
++	dp5 {
++				device_type = "network";
++				compatible = "qcom,nss-dp";
++				qcom,id = <5>;
++				reg = <0x3a510000 0x4000>;
++				qcom,mactype = <1>;
++				local-mac-address = [000000000000];
++				nvmem-cells = <&ethaddr 3>;
++				nvmem-cell-names = "mac-address";
++			};
++
++	dp6 {
++				device_type = "network";
++				compatible = "qcom,nss-dp";
++				qcom,id = <6>;
++				reg = <0x3a514000 0x4000>;
++				qcom,mactype = <1>;
++				local-mac-address = [000000000000];
++				nvmem-cells = <&ethaddr 0>;
++				nvmem-cell-names = "mac-address";
++			};
++
++	edma@3ab00000 {
++				qcom,txdesc-ring-start = <4>;		/* Tx desc ring start ID */
++				qcom,txdesc-rings = <28>;		/* Total number of Tx desc rings to be provisioned */
++				qcom,txcmpl-ring-start = <4>;		/* Tx complete ring start ID */
++				qcom,txcmpl-rings = <28>;		/* Total number of Tx complete rings to be provisioned */
++				qcom,rxfill-ring-start = <4>;		/* Rx fill ring start ID */
++				qcom,rxfill-rings = <4>;		/* Total number of Rx fill rings to be provisioned */
++				qcom,rxdesc-ring-start = <20>;		/* Rx desc ring start ID */
++				qcom,rxdesc-rings = <4>;		/* Total number of Rx desc rings to be provisioned */
++				qcom,rx-page-mode = <0>;		/* Rx fill ring page mode */
++				qcom,tx-map-priority-level = <1>;	/* Tx priority level per port */
++				qcom,rx-map-priority-level = <1>;	/* Rx priority level per core */
++				qcom,num_loopback_rings = <1>;
++				qcom,txdesc_loopback_ring_id = <0>;
++				qcom,txcmpl_loopback_ring_id = <0>;
++				qcom,rxfill_loopback_ring_id = <0>;
++				qcom,rxdesc_loopback_ring_id = <0>;
++				qcom,loopback_queue_base = <56>;
++				qcom,loopback_num_queues = <8>;
++				qcom,ppeds-num = <3>;			/* Number of PPEDS nodes */
++				/* PPE-DS node format: <Rx-fill Tx-cmpl Rx Tx Queue-base Queue-count> */
++				qcom,ppeds-map = <1 1 1 1 32 8>,	/* PPEDS Node#0 ring and queue map */
++						<2 2 2 2 40 8>,		/* PPEDS Node#1 ring and queue map */
++						<3 3 3 3 48 8>;		/* PPEDS Node#2 ring and queue map */
++				qcom,txdesc-map = <8 9 10 11>,		/* Port0 per-core Tx ring map */
++						<12 13 14 15>,		/* Port1 per-core Tx ring map */
++						<16 17 18 19>,		/* Port2 per-core Tx ring map */
++						<20 21 22 23>,		/* Port3 per-core Tx ring map */
++						<24 25 26 27>,		/* Port4 per-core Tx ring map */
++						<28 29 30 31>,		/* Port5 per-core Tx ring map */
++						<4 5 6 7>;		/* Used only for packets from VP */
++				qcom,txdesc-fc-grp-map = <1 2 3 4 5 6>;	/* Per GMAC flow control group map */
++				qcom,rxfill-map = <4 5 6 7>;		/* Per-core Rx fill ring map */
++				qcom,rxdesc-map = <20 21 22 23>;	/* Per-core Rx desc ring map */
++				qcom,rx-queue-start = <0>;		/* Rx queue start */
++				qcom,rx-ring-queue-map = <0 8 16 24>,	/* Priority 0 queues per-core Rx ring map */
++						<1 9 17 25>,		/* Priority 1 queues per-core Rx ring map */
++						<2 10 18 26>,		/* Priority 2 queues per-core Rx ring map */
++						<3 11 19 27>,		/* Priority 3 queues per-core Rx ring map */
++						<4 12 20 28>,		/* Priority 4 queues per-core Rx ring map */
++						<5 13 21 29>,		/* Priority 5 queues per-core Rx ring map */
++						<6 14 22 30>,		/* Priority 6 queues per-core Rx ring map */
++						<7 15 23 31>;		/* Priority 7 queues per-core Rx ring map */
++				qcom,vp-id = <8>;			/* Virtual port dummy MAC Id */
++				qcom,txdesc_point_offload_ring = <0>;		/* Txdesc point offlaod ring */
++				qcom,txcmpl_point_offload_ring = <0>;		/* Txcmpl point offlaod ring */
++				qcom,rxfill_point_offload_ring = <0>;		/* Rxfill point offlaod ring */
++				qcom,rxdesc_point_offload_ring = <0>;		/* Rxdesc point offlaod ring */
++				interrupts = <0 367 4>,			/* Tx complete ring id #4 IRQ info */
++					   <0 368 4>,			/* Tx complete ring id #5 IRQ info */
++					   <0 369 4>,			/* Tx complete ring id #6 IRQ info */
++					   <0 370 4>,			/* Tx complete ring id #7 IRQ info */
++					   <0 371 4>,			/* Tx complete ring id #8 IRQ info */
++					   <0 372 4>,			/* Tx complete ring id #9 IRQ info */
++					   <0 373 4>,			/* Tx complete ring id #10 IRQ info */
++					   <0 374 4>,			/* Tx complete ring id #11 IRQ info */
++					   <0 375 4>,			/* Tx complete ring id #12 IRQ info */
++					   <0 376 4>,			/* Tx complete ring id #13 IRQ info */
++					   <0 377 4>,			/* Tx complete ring id #14 IRQ info */
++					   <0 378 4>,			/* Tx complete ring id #15 IRQ info */
++					   <0 379 4>,			/* Tx complete ring id #16 IRQ info */
++					   <0 380 4>,			/* Tx complete ring id #17 IRQ info */
++					   <0 381 4>,			/* Tx complete ring id #18 IRQ info */
++					   <0 382 4>,			/* Tx complete ring id #19 IRQ info */
++					   <0 383 4>,			/* Tx complete ring id #20 IRQ info */
++					   <0 384 4>,			/* Tx complete ring id #21 IRQ info */
++					   <0 509 4>,			/* Tx complete ring id #22 IRQ info */
++					   <0 508 4>,			/* Tx complete ring id #23 IRQ info */
++					   <0 507 4>,			/* Tx complete ring id #24 IRQ info */
++					   <0 506 4>,			/* Tx complete ring id #25 IRQ info */
++					   <0 505 4>,			/* Tx complete ring id #26 IRQ info */
++					   <0 504 4>,			/* Tx complete ring id #27 IRQ info */
++					   <0 503 4>,			/* Tx complete ring id #28 IRQ info */
++					   <0 502 4>,			/* Tx complete ring id #29 IRQ info */
++					   <0 501 4>,			/* Tx complete ring id #30 IRQ info */
++					   <0 500 4>,			/* Tx complete ring id #31 IRQ info */
++					   <0 351 4>,			/* Rx desc ring id #20 IRQ info */
++					   <0 352 4>,			/* Rx desc ring id #21 IRQ info */
++					   <0 353 4>,			/* Rx desc ring id #22 IRQ info */
++					   <0 354 4>,			/* Rx desc ring id #23 IRQ info */
++					   <0 499 4>,			/* Misc error IRQ info */
++					   <0 359 4>,			/* RxFill ring id #4 IRQ info */
++					   <0 360 4>,			/* RxFill ring id #5 IRQ info */
++					   <0 361 4>,			/* RxFill ring id #6 IRQ info */
++					   <0 362 4>,			/* RxFill ring id #7 IRQ info */
++					   <0 364 4>,			/* PPEDS Node #1(TxComp ring id #1) TxComplete IRQ info */
++					   <0 332 4>,			/* PPEDS Node #1(Rx Desc ring id #1) Rx Desc IRQ info */
++					   <0 356 4>,			/* PPEDS Node #1(RxFill Desc ring id #1) Rx Fill IRQ info */
++					   <0 365 4>,			/* PPEDS Node #2(TxComp ring id #2) TxComplete IRQ info */
++					   <0 333 4>,			/* PPEDS Node #2(Rx Desc ring id #2) Rx Desc IRQ info */
++					   <0 357 4>,			/* PPEDS Node #2(RxFill Desc ring id #2) Rx Fill IRQ info */
++					   <0 366 4>,			/* PPEDS Node #3(TxComp ring id #3) TxComplete IRQ info */
++					   <0 334 4>,			/* PPEDS Node #3(Rx Desc ring id #3) Rx Desc IRQ info */
++					   <0 358 4>;			/* PPEDS Node #3(RxFill Desc ring id #3) Rx Fill IRQ info */
++	
++			};
++};

@@ -12,6 +12,8 @@
 !gateway/**
 !scripts/
 !scripts/**
+!patches/
+!patches/**
 !doc/
 !doc/**
 
