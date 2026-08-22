@@ -41,6 +41,18 @@ scripts/           build the rootfs, install the gateway, pack an image
 doc/               the specification the control plane was written against
 ```
 
+## Quick start
+
+```bash
+git clone https://github.com/OLGTX303/debian-sbe1v1k
+cd debian-sbe1v1k
+bash scripts/fetch-sources.sh          # checks host tools, fetches public
+                                       # sources, applies the board patch
+```
+
+`fetch-sources.sh` tells you exactly what it still needs and where to put it,
+then re-run it to have it verify and patch. Nothing it does needs root.
+
 ## Building
 
 Needs `debootstrap`, `qemu-user-static`, `squashfs-tools` and root:
@@ -63,6 +75,11 @@ Two inputs are **not** in this repository and must be supplied locally:
 
 Both are vendor-licensed and are not redistributed here. `scripts/` reads them
 from paths you point at; the build warns and degrades if they are absent.
+
+`patches/` carries the board support that is ours to distribute — the device
+tree diff adding the pwm-fan and its cooling levels, the thermal zones and trip
+points, and the port wiring. `fetch-sources.sh` applies it, and it is
+idempotent: a second run reports "already applied" rather than failing.
 
 ## Tests
 
