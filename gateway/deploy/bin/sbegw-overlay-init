@@ -1,0 +1,185 @@
+#!/bin/sh
+# PID 1. Turns the read-only SquashFS root into a writable overlay.
+#
+# Why this file is /sbin/init
+# ---------------------------
+# The kernel command line on this platform is
+#     console=ttyMSM0,115200n8 rootwait root=PARTLABEL=rootfs
+# with no `init=`, so the kernel execs /sbin/init. Owning that entry point is
+# enough to set up an overlay root without an initramfs and without touching
+# U-Boot or the device tree — both of which are riskier to change than a file
+# in the image we build.
+#
+# The layout
+# ----------
+#   lower  a private bind mount of the SquashFS root
+#   upper  overlay/root/upper on the rootfs_data partition
+#   work   overlay/root/work  on the same partition
+# The merged tree becomes / via switch_root, and the data partition is moved to
+# /data inside it, so /data/overlay/root/upper holds every change ever made to
+# the system. Resetting to the shipped image is "delete that directory".
+#
+# Failure policy
+# --------------
+# Every error path ends in `fallback`, which execs systemd on the read-only
+# root — exactly how the device booted before this script existed. A broken or
+# missing overlay must cost the user a writable filesystem, never a boot.
+#
+# Escape hatches, in case the overlay itself is what is broken:
+#   * add `sbegw.readonly` to the kernel command line (reachable from U-Boot
+#     over UART, so it works even when the rootfs_data content is at fault)
+#   * create overlay/root.disabled on the rootfs_data partition
+set -u
+
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+
+REAL=/lib/systemd/systemd
+LABEL=rootfs_data
+MNT=/run/sbegw-state
+LOWER=/run/sbegw-lower
+NEWROOT=/run/sbegw-newroot
+
+log() {
+    # /dev/kmsg so the message survives into the journal and onto the console;
+    # at this point nothing else is listening.
+    if [ -w /dev/kmsg ]; then
+        echo "<5>sbegw-overlay-init: $*" > /dev/kmsg 2>/dev/null
+    else
+        echo "sbegw-overlay-init: $*"
+    fi
+}
+
+fallback() {
+    log "$1; booting the read-only root"
+    umount "$NEWROOT" 2>/dev/null || true
+    umount "$LOWER" 2>/dev/null || true
+    umount "$MNT" 2>/dev/null || true
+    exec "$REAL"
+    # Only reached if systemd itself is missing, in which case a shell on the
+    # console is the last useful thing we can offer.
+    log "exec $REAL failed"
+    exec /bin/sh
+}
+
+# systemd mounts these itself and tolerates finding them already present, so
+# doing it early costs nothing and lets the rest of this script run.
+mount -t proc -o nosuid,noexec,nodev proc /proc 2>/dev/null || true
+mount -t sysfs -o nosuid,noexec,nodev sysfs /sys 2>/dev/null || true
+mount -t devtmpfs -o mode=0755,nosuid devtmpfs /dev 2>/dev/null || true
+
+grep -qw sbegw.readonly /proc/cmdline 2>/dev/null &&
+    fallback "sbegw.readonly was requested on the kernel command line"
+
+grep -qw overlay /proc/filesystems 2>/dev/null ||
+    fallback "this kernel has no overlayfs"
+
+# /run has to be a tmpfs before we can create any mountpoint: the root we are
+# standing on is read-only, so mkdir anywhere else fails.
+mount -t tmpfs -o mode=0755,nosuid,nodev tmpfs /run 2>/dev/null ||
+    fallback "cannot mount a tmpfs on /run"
+
+mkdir -p "$MNT" "$LOWER" "$NEWROOT" || fallback "cannot create mountpoints under /run"
+
+# udev is not running, so /dev/disk/by-partlabel does not exist yet. The GPT
+# partition name is in sysfs as PARTNAME, which is how sbegw-mount-state finds
+# the same partition later in boot.
+find_part() {
+    for uevent in /sys/block/mmcblk*/mmcblk*p*/uevent; do
+        [ -r "$uevent" ] || continue
+        name=$(sed -n 's/^PARTNAME=//p' "$uevent")
+        case "$name" in
+            "$1"|"0:$1") echo "/dev/$(basename "$(dirname "$uevent")")"; return 0 ;;
+        esac
+    done
+    return 1
+}
+
+DEV=$(find_part "$LABEL") || fallback "no partition named $LABEL"
+[ -b "$DEV" ] || fallback "$DEV is not a block device"
+
+# Flashing wipes rootfs_data, so on the first boot after a sysupgrade this
+# partition has no filesystem at all. That is what the operator sees as "/ is
+# 100% full again": the mount here fails, the whole boot stays read-only, and
+# sbegw-mount-state formats the partition ~20 seconds later — long after the
+# only moment a root overlay could have been built. The previous boot was fine
+# because the filesystem already existed.
+#
+#   [ 2.20] mmcblk0: p1 ... p30
+#   [ 4.24] EXT4-fs (mmcblk0p30): VFS: Can't find ext4 filesystem
+#   [25.40] EXT4-fs (mmcblk0p30): mounted filesystem r/w
+#
+# So the filesystem is created here when the partition is genuinely blank,
+# using the same guard sbegw-mount-state uses: every byte of the first 8 MiB
+# must be 0x00 or 0xFF. Anything with real content in it — a filesystem this
+# build does not recognise, someone else's data — fails that test and is left
+# untouched for sbegw-mount-state to report on properly.
+looks_blank() {
+    bytes=$(dd if="$1" bs=1M count=8 status=none 2>/dev/null |
+            tr -d '\000\377' | wc -c)
+    [ "${bytes:-1}" = "0" ]
+}
+
+mount_state() {
+    attempt=1
+    while [ "$attempt" -le 3 ]; do
+        if mount -t ext4 -o rw,noatime "$DEV" "$MNT" 2>/dev/null; then
+            return 0
+        fi
+        if [ "$attempt" = 1 ] && looks_blank "$DEV"; then
+            log "$DEV is blank (first boot after a flash); creating ext4"
+            mkfs.ext4 -q -F -L sbegw-state "$DEV" >/dev/null 2>&1 ||
+                log "mkfs.ext4 on $DEV failed"
+        elif [ -x /usr/sbin/e2fsck ]; then
+            # Not blank and it would not mount: replay the journal. -p fixes
+            # only what is safe to fix without asking; anything worse is left
+            # for sbegw-mount-state, which can report it.
+            log "$DEV did not mount; replaying its journal"
+            /usr/sbin/e2fsck -p "$DEV" >/dev/null 2>&1
+        else
+            sleep 1
+        fi
+        attempt=$((attempt + 1))
+    done
+    return 1
+}
+
+mount_state ||
+    fallback "cannot mount $DEV ($LABEL); it is neither a usable ext4 nor blank"
+
+[ -e "$MNT/overlay/root.disabled" ] &&
+    fallback "overlay/root.disabled exists on $LABEL"
+
+mkdir -p "$MNT/overlay/root/upper" "$MNT/overlay/root/work" ||
+    fallback "cannot create the overlay directories on $LABEL"
+
+# overlayfs will not take the root of the mount it is layering under as its
+# lowerdir, so hand it a private bind of the SquashFS instead.
+mount --bind / "$LOWER" || fallback "cannot bind the read-only root"
+
+mount -t overlay overlay \
+    -o "lowerdir=$LOWER,upperdir=$MNT/overlay/root/upper,workdir=$MNT/overlay/root/work" \
+    "$NEWROOT" 2>/dev/null || fallback "cannot build the overlay (upper on $LABEL)"
+
+# Refuse to switch into a tree that cannot boot. Cheaper to check than to
+# debug from a serial console.
+[ -x "$NEWROOT$REAL" ] || fallback "the merged root has no $REAL"
+: > "$NEWROOT/.sbegw-writable" 2>/dev/null ||
+    fallback "the overlay mounted but is not writable"
+rm -f "$NEWROOT/.sbegw-writable"
+
+# Carry the state partition into the new root. sbegw-mount-state sees /data
+# already mounted and leaves it alone.
+mkdir -p "$NEWROOT/data" 2>/dev/null || true
+if ! mount --move "$MNT" "$NEWROOT/data" 2>/dev/null; then
+    # Not fatal: the overlay keeps working from the dentries it already holds,
+    # and sbegw-mount-state will mount the partition at /data itself.
+    log "could not move the $LABEL mount to /data; leaving it at $MNT"
+fi
+
+log "root is a writable overlay (upper layer on $DEV)"
+
+# switch_root moves /dev, /proc, /sys and /run across, and skips deleting the
+# old root because SquashFS is not a ramfs.
+exec switch_root "$NEWROOT" "$REAL"
+fallback "switch_root failed"

@@ -1,0 +1,50 @@
+#!/bin/sh
+# Extract the per-radio ath12k calibration blobs from the ART partition into the
+# firmware search path, before the wireless driver probes.
+#
+# This replaces the previous extraction, which read 0x800000 bytes from offset
+# 0x1100000 of a partition that is only 0x100000 bytes long — so it silently
+# produced no calibration data at all and the radios came up uncalibrated. The
+# correct per-radio offsets (0x58800 / 0x8a800 / 0xbc800, 0x2d000 each) come from
+# the board's own vendor OpenWrt hotplug script and are bounds-checked here.
+set -eu
+
+FWDIR=/run/firmware
+mkdir -p "$FWDIR"
+
+# Point the kernel's custom firmware directory at /run/firmware.
+#
+# This parameter takes exactly ONE directory, not a colon-separated list: in
+# drivers/base/firmware_loader/main.c it is a single entry at the head of
+# fw_path[], with /lib/firmware and friends following it unconditionally. The
+# previous "$FWDIR:/lib/firmware" therefore made the kernel look for
+# "/run/firmware:/lib/firmware/ath12k/QCN9274/hw2.0/cal-pci-...", a directory
+# that cannot exist, so every radio silently fell back to coldboot calibration
+# even though the blobs had been extracted correctly. /lib/firmware is still
+# searched because it is built into the list.
+if [ -e /sys/module/firmware_class/parameters/path ]; then
+    printf '%s' "$FWDIR" > /sys/module/firmware_class/parameters/path
+fi
+
+PYTHONPATH=/opt/sbegw/lib exec /usr/bin/python3 - "$FWDIR" <<'PY'
+import json
+import sys
+
+from sbegw.adapters import art
+
+target = sys.argv[1]
+result = art.extract_caldata(target)
+if not result["device"]:
+    print("ART partition not found; radios will run without calibration data",
+          file=sys.stderr)
+    raise SystemExit(0)
+
+for entry in result["written"]:
+    print(f"extracted {entry['bytes']} bytes -> {entry['path']}")
+for problem in result["errors"]:
+    print(f"warning: {problem}", file=sys.stderr)
+
+status = art.caldata_status()
+good = sum(1 for c in status if c["valid_header"] and not c["blank"])
+print(f"{good}/{len(status)} radio calibration blobs valid in {result['device']}")
+PY

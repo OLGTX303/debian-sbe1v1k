@@ -1,0 +1,21 @@
+[Unit]
+Description=Floor the system clock at the image build date (no RTC on this board)
+Documentation=man:systemd-timesyncd.service(8)
+DefaultDependencies=no
+# Must be in place before anything validates a date: apt, TLS, and
+# systemd-timesyncd's own sanity checks all depend on it. local-fs is needed so
+# timesyncd's saved clock on the writable root can be read.
+After=local-fs.target
+Before=sysinit.target time-set.target systemd-timesyncd.service
+Conflicts=shutdown.target
+Before=shutdown.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/opt/sbegw/bin/sbegw-clock-floor
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=sysinit.target

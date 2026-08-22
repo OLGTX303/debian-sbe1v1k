@@ -1,0 +1,32 @@
+#!/bin/sh
+# Generate SSH host keys into /data on first boot.
+#
+# sshd cannot create them itself here: /etc/ssh is on the read-only SquashFS
+# root, so the packaged ssh-keygen -A at boot fails and sshd exits with
+# "no hostkeys available -- exiting". The keys therefore live on the writable
+# data partition and sshd is pointed at them by 10-sbegw.conf.
+set -eu
+
+DIR=/data/sbegw/ssh
+mkdir -p "$DIR"
+chmod 0700 "$DIR"
+
+for spec in "ed25519:" "rsa:-b 4096"; do
+    type=${spec%%:*}
+    extra=${spec#*:}
+    key="$DIR/ssh_host_${type}_key"
+    if [ -s "$key" ]; then
+        continue
+    fi
+    # shellcheck disable=SC2086
+    ssh-keygen -q -t "$type" $extra -N "" -f "$key" -C "sbe1v1k-$(cat /etc/machine-id 2>/dev/null || echo gateway)"
+    chmod 0600 "$key"
+    chmod 0644 "$key.pub"
+    echo "generated $key"
+done
+
+# Print the fingerprints so the operator can verify them on first connect.
+for pub in "$DIR"/*.pub; do
+    [ -e "$pub" ] || continue
+    ssh-keygen -l -f "$pub" || true
+done

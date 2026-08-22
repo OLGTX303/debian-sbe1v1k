@@ -1,0 +1,28 @@
+#!/bin/sh
+# MLO-capable hostapd shim.
+#
+# Debian bookworm ships hostapd 2.10, which has no MLD support at all — it cannot
+# bring up an 802.11be MLD, so Multi-Link Operation is impossible with it. The
+# QSDK build (hostapd 2025.11, the `wpad` multi-call binary) does support
+# mld_ap/mld_addr/mld_link_id and is built against musl, so it is installed
+# side-by-side under /opt/sbegw/wifi with its own loader and libraries. glibc and
+# musl coexist happily: their dynamic loaders have different paths.
+#
+# wpad dispatches on argv[0], hence the `hostapd` symlink rather than calling
+# wpad directly.
+set -eu
+
+PREFIX=/opt/sbegw/wifi
+TARGET="$PREFIX/usr/sbin/hostapd"
+
+if [ ! -x "$TARGET" ]; then
+    echo "hostapd: $TARGET is missing — run sbegw-install-wifi to stage the" \
+         "QSDK hostapd bundle, or MLO will be unavailable" >&2
+    exit 127
+fi
+
+# musl honours LD_LIBRARY_PATH; keep it scoped to this process only.
+LD_LIBRARY_PATH="$PREFIX/lib:$PREFIX/usr/lib"
+export LD_LIBRARY_PATH
+
+exec "$TARGET" "$@"

@@ -1,0 +1,1165 @@
+Wi-Fi Subsystem — Full Functional Checklist
+1. Wi-Fi Hardware / Radio Platform
+
+For your tri-radio Wi-Fi 7 platform:
+
+ Detect all physical Wi-Fi radios
+ Stable radio IDs independent of phy0/phy1/phy2
+ PCIe radio discovery
+ ath12k/QSDK driver state
+ Radio firmware version
+ BDF/board-data identification
+ Calibration status
+ Radio MAC address
+ Supported bands
+ Supported channels
+ Supported channel widths
+ Supported PHY standards
+ HT capabilities
+ VHT capabilities
+ HE capabilities
+ EHT capabilities
+ MLO capability
+ Spatial-stream capability
+ Maximum NSS
+ Maximum TX power
+ Regulatory capabilities
+ DFS capability
+ AFC capability where applicable
+ Radio temperature if available
+ Radio reset/recovery
+ Radio health monitoring
+ Firmware crash detection
+ Firmware recovery statistics
+
+Use logical identities such as:
+
+radio-2g
+radio-5g
+radio-6g
+
+only after runtime capabilities prove the mapping.
+
+Do not permanently depend on:
+
+phy0
+phy1
+phy2
+wifi0
+wifi1
+wifi2
+2. Band Support
+2.4 GHz
+ 802.11b
+ 802.11g
+ 802.11n
+ 802.11ax where supported
+ 802.11be where supported
+ 20 MHz
+ 40 MHz
+ Channel selection
+ TX power
+5 GHz
+ 802.11a
+ 802.11n
+ 802.11ac
+ 802.11ax
+ 802.11be
+ 20 MHz
+ 40 MHz
+ 80 MHz
+ 160 MHz
+ DFS
+ Channel selection
+ TX power
+6 GHz
+ Wi-Fi 6E
+ Wi-Fi 7
+ HE
+ EHT
+ 20 MHz
+ 40 MHz
+ 80 MHz
+ 160 MHz
+ 320 MHz when hardware/regulatory state permits
+ PSC handling
+ Regulatory-domain enforcement
+ AFC architecture where required
+ Correct 6 GHz security enforcement
+ 6 GHz client association
+ 6 GHz roaming
+ 6 GHz MLO participation
+3. Radio Configuration
+
+Each radio requires:
+
+ Enable/disable
+ Country
+ Regulatory domain
+ Band
+ Channel
+ Auto channel
+ Channel width
+ TX power
+ Auto TX power
+ Antenna/chain information
+ NSS
+ Beacon configuration
+ DTIM
+ Fragmentation threshold if useful
+ RTS threshold
+ Short GI where applicable
+ OFDMA controls where exposed
+ MU-MIMO controls where exposed
+ Beamforming controls where exposed
+ BSS coloring
+ EHT configuration
+ Minimum basic rate
+ Minimum RSSI
+ Client limits
+4. Wi-Fi Network / SSID
+
+Create first-class:
+
+WirelessNetwork
+
+Each wireless network should support:
+
+ Name
+ SSID
+ Description
+ Enable/disable
+ Broadcast/hide SSID
+ Network/VLAN assignment
+ Band selection
+ Radio-group selection
+ Security profile
+ PPSK profile
+ RADIUS profile
+ MLO profile
+ Guest policy
+ Client isolation
+ Bandwidth profile
+ Schedule
+ Minimum RSSI
+ Roaming profile
+ Multicast policy
+ mDNS policy
+ QoS policy
+ Firewall/security policy
+5. Multi-BSSID
+ Multiple SSIDs per radio
+ Stable BSSID generation
+ Unique BSSID
+ BSSID-to-SSID mapping
+ BSSID-to-VLAN mapping
+ Per-BSSID security
+ Per-BSSID client count
+ Per-BSSID traffic
+ Per-BSSID telemetry
+ Per-BSSID enable/disable
+6. MLO — Multi-Link Operation
+
+This needs to be a core data model, not a checkbox.
+
+Create:
+
+MLD
+ ├── link-2g
+ ├── link-5g
+ └── link-6g
+
+Functions:
+
+ Create MLD
+ Delete MLD
+ Enable/disable MLO
+ Stable MLD ID
+ MLD MAC
+ Link IDs
+ Link MAC addresses
+ Associate radio links
+ Associate SSID
+ Associate security profile
+ Associate VLAN/network
+ MLO client detection
+ MLO association
+ MLO authentication
+ Multi-link negotiation
+ Link add
+ Link remove
+ Link recovery
+ Link steering
+ Dynamic link selection
+ Per-link RSSI
+ Per-link SNR
+ Per-link PHY rate
+ Per-link channel
+ Per-link bandwidth
+ Per-link TX/RX
+ Per-link retry rate
+ Aggregate MLO throughput
+ MLO client history
+ Non-MLO client fallback
+ MLO restart recovery
+ MLO stale-state cleanup
+7. Wi-Fi Security
+Personal
+ Open
+ WPA2 Personal
+ WPA3 Personal
+ WPA2/WPA3 transition
+ SAE
+ PMF optional
+ PMF required
+Enterprise
+ WPA2 Enterprise
+ WPA3 Enterprise
+ 802.1X
+ EAP authentication
+ RADIUS
+ RadSec where supported
+ RADIUS accounting
+ RADIUS CoA
+ Dynamic VLAN
+ Certificate authentication
+ PMF
+
+6 GHz configuration must reject invalid legacy security combinations.
+
+8. PPSK / Private Pre-Shared Keys
+
+Enterprise PPSK support:
+
+ Multiple PSKs on one SSID
+ PSK name
+ PSK description
+ PSK owner
+ PSK expiration
+ PSK enable/disable
+ PSK VLAN assignment
+ PSK network assignment
+ PSK policy assignment
+ PSK bandwidth profile
+ PSK device group
+ PSK client history
+ PSK revocation
+
+Example:
+
+SSID: Company-IoT
+
+
+Key A
+→ VLAN 40
+→ CCTV policy
+
+
+Key B
+→ VLAN 50
+→ Building Automation
+
+
+Key C
+→ VLAN 60
+→ Printers
+9. RADIUS
+
+Wi-Fi side needs:
+
+ RADIUS authentication server
+ Secondary authentication server
+ Accounting server
+ Secondary accounting server
+ Shared secrets
+ NAS identifier
+ NAS IP
+ Calling-Station-ID
+ Called-Station-ID
+ VLAN attributes
+ Session timeout
+ Idle timeout
+ Accounting start
+ Accounting stop
+ Interim accounting
+ CoA
+ Disconnect messages
+ RadSec
+ Certificate validation
+ RADIUS health monitoring
+10. Dynamic VLAN
+ RADIUS VLAN
+ PPSK VLAN
+ MAC-auth VLAN
+ Default VLAN
+ Fallback VLAN
+ VLAN authorization validation
+ VLAN switching during re-auth where supported
+ VLAN telemetry
+ Client network history
+11. MAC Authentication
+
+Optional enterprise function:
+
+ MAC authentication
+ RADIUS MAC auth
+ Local MAC database
+ Allowlist
+ Denylist
+ Dynamic VLAN
+ Policy assignment
+ Authentication logging
+
+Do not treat MAC authentication as strong security.
+
+12. Enterprise Roaming
+802.11k
+ Neighbor reports
+ Radio measurements
+ Neighbor list generation
+802.11v
+ BSS transition
+ Client steering requests
+ Transition history
+802.11r
+ Fast BSS transition
+ FT over air
+ FT over DS if supported
+ Mobility domain
+ PMK-R0
+ PMK-R1
+ Enterprise FT
+ Personal FT
+
+Additionally:
+
+ PMK caching
+ OKC where appropriate
+ Roaming analytics
+ Roaming failure logging
+13. Client Steering
+ Band steering
+ Radio steering
+ BSS steering
+ 802.11v steering
+ MLO link steering
+ RSSI-based steering
+ Load-based steering
+ Channel-utilization steering
+ Sticky-client mitigation
+ Steering exclusions
+ Steering history
+14. Band Steering
+
+Policies:
+
+Balanced
+Prefer 5 GHz
+Prefer 6 GHz
+Performance
+Disabled
+
+Functions:
+
+ Client capability detection
+ 2.4 → 5 GHz steering
+ 2.4 → 6 GHz where appropriate
+ 5 → 6 GHz steering
+ Avoid breaking legacy clients
+ Client-specific exceptions
+15. Minimum RSSI
+ Per SSID
+ Per radio
+ Per band
+ Disconnect threshold
+ Steering threshold
+ Hysteresis
+ Event logging
+ Client exception list
+16. Minimum Data Rate
+ Disable legacy rates
+ Configure basic rates
+ Minimum management rate
+ Per-band settings
+ Validate client compatibility
+
+Useful for enterprise high-density deployments.
+
+17. Airtime Management
+ Airtime fairness
+ Per-client airtime
+ Per-SSID airtime
+ Airtime utilization
+ Slow-client detection
+ Legacy-client impact detection
+ Airtime fairness enable/disable
+ Airtime telemetry
+18. OFDMA
+
+Where QSDK/firmware supports control/telemetry:
+
+ Downlink OFDMA
+ Uplink OFDMA
+ RU allocation information
+ Capability detection
+ Statistics
+
+Do not fabricate controls not exposed by firmware.
+
+19. MU-MIMO
+ DL MU-MIMO
+ UL MU-MIMO where supported
+ Client capability
+ MU group information where available
+ Telemetry
+20. Beamforming
+ Explicit beamforming
+ Implicit beamforming if supported
+ Client capability
+ Enable/disable only where safely exposed
+ Telemetry where available
+21. BSS Coloring
+ Enable/disable
+ Color selection
+ Collision detection where exposed
+ Auto selection
+ Telemetry
+22. RF Profiles
+
+Create reusable:
+
+RFProfile
+
+Example:
+
+Enterprise Office
+High Density
+Warehouse
+Home
+Low Power
+Performance
+
+Include:
+
+ Channel width
+ TX power
+ Minimum RSSI
+ Minimum rate
+ Band steering
+ DFS preference
+ Channel policy
+ Client limits
+ Roaming configuration
+23. Automatic Channel Management
+ Scan available channels
+ Measure interference
+ Measure utilization
+ Measure noise
+ Detect neighboring APs
+ DFS status
+ Regulatory restrictions
+ Select recommended channel
+ Scheduled optimization
+ Manual optimization
+ Do not change channels excessively
+ Channel history
+24. RF Scanning
+ Neighbor AP scan
+ SSID
+ BSSID
+ Channel
+ Width
+ RSSI
+ Security
+ PHY mode
+ Utilization where obtainable
+ Scan history
+
+Scanning should not unnecessarily disrupt active client traffic.
+
+25. DFS
+ DFS channel support
+ CAC
+ CAC state
+ Radar detection
+ Radar events
+ NOP tracking
+ Automatic channel evacuation
+ Channel reselection
+ DFS history
+ Client impact events
+26. 6 GHz AFC
+
+If required by configured regulatory environment:
+
+ AFC capability model
+ Standard-power vs low-power operation
+ AFC availability
+ AFC server architecture
+ Location data handling
+ Allowed-frequency response
+ Allowed-power response
+ Expiration
+ Refresh
+ Failure handling
+ Safe fallback
+
+Do not allow illegal operation if AFC authorization is required but unavailable.
+
+27. Country / Regulatory Management
+ Country selection
+ Regulatory database
+ Allowed channels
+ Allowed bandwidth
+ Allowed TX power
+ DFS requirements
+ 6 GHz restrictions
+ AFC requirements
+ Prevent invalid configurations
+ Report regulatory reason in API/UI
+28. Wi-Fi Client Database
+
+Each wireless client should expose:
+
+MAC
+hostname
+vendor
+SSID
+BSSID
+network
+VLAN
+radio
+band
+channel
+channel width
+security
+authentication
+
+plus:
+
+ RSSI
+ SNR
+ Noise
+ TX PHY rate
+ RX PHY rate
+ TX bytes
+ RX bytes
+ TX packets
+ RX packets
+ Retry rate
+ Failed transmissions
+ MCS
+ NSS
+ HE capability
+ EHT capability
+ MLO capability
+ MLD MAC
+ MLO links
+ Connected duration
+ First seen
+ Last seen
+ Roaming history
+ Authentication history
+29. Client Actions
+
+Administrator actions:
+
+ Rename
+ Block
+ Unblock
+ Disconnect
+ Reconnect/reauth request
+ Quarantine
+ Fixed IP integration
+ VLAN override where appropriate
+ Bandwidth limit
+ Security policy
+ Client notes/tags
+30. Client Health
+
+Compute a client-health model based on real measurements.
+
+Potential inputs:
+
+RSSI
+SNR
+retry rate
+PHY rate
+channel utilization
+packet loss
+roaming behavior
+
+Return:
+
+ Excellent
+ Good
+ Fair
+ Poor
+
+But also expose the actual underlying numbers.
+
+Never make the score the only diagnostic information.
+
+31. Wi-Fi Traffic Statistics
+
+Per:
+
+radio
+band
+SSID
+BSSID
+MLD
+MLO link
+client
+network
+
+provide:
+
+ RX bytes
+ TX bytes
+ RX packets
+ TX packets
+ RX rate
+ TX rate
+ PPS
+ retries
+ drops
+ errors
+ airtime
+ utilization
+32. Wi-Fi Events
+
+At minimum:
+
+RADIO_UP
+RADIO_DOWN
+RADIO_RECOVERED
+
+
+SSID_UP
+SSID_DOWN
+
+
+CLIENT_ASSOCIATED
+CLIENT_AUTHENTICATED
+CLIENT_DISCONNECTED
+CLIENT_ROAMED
+
+
+AUTH_FAILED
+RADIUS_FAILED
+
+
+DFS_CAC_STARTED
+DFS_CAC_COMPLETED
+DFS_RADAR
+
+
+CHANNEL_CHANGED
+
+
+MLO_CLIENT_CONNECTED
+MLO_LINK_ADDED
+MLO_LINK_REMOVED
+MLO_RECOVERY
+
+
+RADIO_FW_CRASH
+RADIO_FW_RECOVERED
+
+Need:
+
+ timestamp
+ radio
+ client
+ SSID
+ reason code
+ status code
+ severity
+33. Authentication Diagnostics
+
+For failed association expose:
+
+association rejected
+authentication rejected
+SAE failure
+PMF failure
+4-way handshake failure
+RADIUS timeout
+RADIUS reject
+802.1X failure
+invalid VLAN
+DHCP failure
+
+The UI should say more than:
+
+Client failed to connect
+34. RADIUS Diagnostics
+ Authentication attempts
+ Accept
+ Reject
+ Timeout
+ Accounting
+ CoA
+ RADIUS latency
+ Server health
+ Dynamic VLAN response
+ Failure reason
+35. Wi-Fi Security Monitoring
+ Authentication failures
+ Excessive deauth
+ Excessive association attempts
+ Rogue AP observation
+ Evil-twin indicators where practical
+ Weak security configuration warnings
+ Legacy encryption warnings
+ PMF status
+ WPA3 status
+ 6 GHz security compliance
+36. Rogue AP / Neighbor Detection
+ Neighbor AP list
+ Unknown AP
+ Same SSID from unknown BSSID
+ Channel
+ RSSI
+ Security mode
+ First seen
+ Last seen
+
+Do not automatically classify every neighboring AP as malicious.
+
+37. Guest Wi-Fi
+ Guest SSID
+ Guest VLAN
+ Client isolation
+ LAN isolation
+ Internet-only policy
+ DNS policy
+ Rate limiting
+ Session limits
+
+Future optional:
+
+ Captive portal
+ Vouchers
+ Guest authentication
+38. IoT Wi-Fi
+
+Support profiles optimized for problematic/legacy clients:
+
+ 2.4 GHz only
+ WPA2 mode where required
+ MLO disabled
+ Fast roaming disabled
+ Optional PMF
+ Dedicated VLAN
+ Isolation
+ Device-specific policy
+39. SSID Scheduling
+ Enable schedule
+ Disable schedule
+ Day of week
+ Start time
+ End time
+ Timezone integration
+ Exceptions
+40. Per-SSID Bandwidth Control
+ Upload limit
+ Download limit
+ Per-client limit
+ Aggregate limit
+ QoS profile
+ DSCP policy
+
+Integrate with the gateway QoS engine.
+
+41. Wi-Fi VLAN Integration
+
+Wi-Fi subsystem must communicate cleanly with gateway netd.
+
+SSID
+ ↓
+Wireless interface
+ ↓
+VLAN
+ ↓
+Bridge/network
+ ↓
+Firewall zone
+ ↓
+Gateway services
+
+Support:
+
+ Static VLAN
+ PPSK VLAN
+ RADIUS dynamic VLAN
+ Guest VLAN
+ Native network
+ VLAN validation
+42. Wi-Fi Firewall Integration
+
+Wireless policies should reference gateway security objects rather than maintain a separate firewall.
+
+Example:
+
+SSID: IoT
+    ↓
+Network: IoT
+    ↓
+Zone: IoT
+    ↓
+Policy:
+    IoT → WAN       ALLOW
+    IoT → LAN       DENY
+    IoT → Gateway   DNS/DHCP only
+43. Multicast / mDNS Integration
+
+Per SSID:
+
+ Multicast policy
+ Broadcast suppression where appropriate
+ IGMP behavior
+ MLD behavior
+ mDNS visibility
+ IoT discovery policy
+ Chromecast discovery
+ AirPlay discovery
+
+Gateway remains the actual cross-VLAN policy owner.
+
+44. PPEDS Wi-Fi Acceleration
+
+For your Qualcomm architecture this is important.
+
+ PPEDS radio mapping
+ PPEDS initialization
+ Per-radio PPEDS status
+ TX rings
+ RX rings
+ Queue status
+ Packet statistics
+ Offload status
+ Error counters
+ Recovery state
+
+Three-radio architecture should expose:
+
+radio-1 → PPEDS
+radio-2 → PPEDS
+radio-3 → PPEDS
+
+according to actual QSDK configuration.
+
+45. NSS/PPE Wireless Integration
+
+Expose:
+
+ Wi-Fi → LAN acceleration
+ Wi-Fi → WAN acceleration
+ Wi-Fi VLAN acceleration
+ NAT acceleration where applicable
+ Fast-path flows
+ Software fallback flows
+ Drop counters
+ Exception counters
+ Offload failure reason
+46. Radio Crash Recovery
+
+Wi-Fi must not require full router reboot for every firmware problem.
+
+Implement:
+
+detect firmware crash
+        ↓
+collect diagnostics
+        ↓
+quiesce affected radio
+        ↓
+restart/recover radio
+        ↓
+reapply configuration
+        ↓
+restore BSS
+        ↓
+report event
+
+Need:
+
+ Crash detection
+ Crash counter
+ RDDM/firmware dump integration where appropriate
+ Radio recovery
+ MLO cleanup
+ MLO recreation
+ PPEDS recovery
+ Client reconnection
+47. Wi-Fi Health
+
+Per radio:
+
+UP
+DEGRADED
+FAILED
+RECOVERING
+
+Monitor:
+
+ Driver
+ Firmware
+ PCIe/MHI
+ Host memory
+ QMI
+ PPEDS
+ channel
+ noise
+ utilization
+ client failures
+48. Live Wi-Fi Dashboard
+
+Main wireless dashboard:
+
+Wireless
+├── 2.4 GHz
+├── 5 GHz
+├── 6 GHz
+└── MLO
+
+Each card:
+
+ Radio state
+ Channel
+ Channel width
+ TX power
+ Utilization
+ Noise
+ Client count
+ Throughput
+ Retry rate
+ EHT state
+ MLO state
+ PPEDS/offload status
+49. Wi-Fi Insights
+ Client count history
+ Radio utilization history
+ Channel history
+ Noise history
+ Retry history
+ Throughput history
+ Roaming history
+ Authentication failures
+ DFS history
+ MLO usage
+ 2.4/5/6 GHz client distribution
+ Wi-Fi standard distribution
+ WPA2/WPA3 distribution
+ EHT client count
+ MLO client count
+50. Wi-Fi API
+
+Suggested namespaces:
+
+/api/v1/wifi/radios
+/api/v1/wifi/networks
+/api/v1/wifi/security
+/api/v1/wifi/radius
+/api/v1/wifi/ppsk
+/api/v1/wifi/mlo
+/api/v1/wifi/rf-profiles
+/api/v1/wifi/clients
+/api/v1/wifi/neighbors
+/api/v1/wifi/events
+/api/v1/wifi/insights
+51. wifid
+
+wifid should own logical Wi-Fi state.
+
+Responsibilities:
+
+Radio discovery
+SSID lifecycle
+BSS lifecycle
+MLO/MLD
+Security
+RADIUS integration
+PPSK
+RF configuration
+Client state
+Roaming
+Runtime health
+
+It talks through adapters to:
+
+hostapd
+nl80211
+cfg80211
+ath12k
+QSDK WLAN
+PPEDS
+52. Wi-Fi Adapter Layer
+
+Do not allow product-level code to depend directly on QSDK commands.
+
+Use interfaces such as:
+
+RadioAdapter
+HostapdAdapter
+Ath12kAdapter
+QcaWifiAdapter
+PpedsAdapter
+
+Generic capability model:
+
+RadioCapabilities
+RadioState
+WirelessNetworkState
+MloCapabilities
+MloState
+WirelessClientState
+53. Runtime vs Desired State
+
+Very important:
+
+Desired configuration
+        ↓
+wifid
+        ↓
+hostapd/QSDK
+        ↓
+REAL runtime state
+        ↓
+telemetry/API
+
+Never assume:
+
+configured = working
+
+Example:
+
+Configured:
+320 MHz
+
+
+Runtime:
+160 MHz
+
+
+Reason:
+regulatory restriction
+
+The UI must display the runtime result.
+
+54. Wi-Fi System Services
+
+A reasonable ownership model:
+
+platformd
+  physical radios / PCIe / firmware / hardware
+
+
+wifid
+  SSIDs / MLO / RF / wireless clients
+
+
+radiusd-controller
+  enterprise authentication
+
+
+clientd
+  unified gateway client database
+
+
+telemetryd
+  wireless metrics
+
+
+eventd
+  Wi-Fi events
+
+
+healthd
+  radio health/recovery
+
+
+router-api
+  API
+
+
+router-web
+  UI
+55. Minimum Enterprise Wi-Fi v1
+
+Before calling your wireless subsystem enterprise-ready:
+
+✓ all 3 radios stable
+✓ 2.4 GHz
+✓ 5 GHz
+✓ 6 GHz
+✓ Wi-Fi 6/6E
+✓ Wi-Fi 7 / EHT
+✓ 320 MHz where actually supported
+✓ multiple SSIDs
+✓ VLAN per SSID
+✓ WPA2
+✓ WPA3
+✓ WPA3 Enterprise
+✓ 802.1X
+✓ RADIUS
+✓ PPSK
+✓ dynamic VLAN
+✓ PMF
+✓ MLO
+✓ MLO per-link telemetry
+✓ 802.11k
+✓ 802.11v
+✓ 802.11r
+✓ band steering
+✓ client steering
+✓ minimum RSSI
+✓ RF profiles
+✓ automatic channel
+✓ DFS
+✓ RF scanning
+✓ wireless client database
+✓ roaming history
+✓ authentication diagnostics
+✓ live radio telemetry
+✓ live client telemetry
+✓ PPEDS
+✓ NSS/PPE acceleration integration
+✓ radio crash recovery
+✓ gateway firewall/VLAN integration
+✓ REST API
+✓ live WebSocket/SSE
+✓ enterprise management UI
+Overall Platform Split
+
+I would now define the complete router as three major layers:
+
+┌───────────────────────────────────────────────┐
+│              Enterprise UI / API              │
+├──────────────────────┬────────────────────────┤
+│       GATEWAY        │         Wi-Fi          │
+│                      │                        │
+│ WAN                  │ Radios                 │
+│ Multi-WAN            │ 2.4 / 5 / 6 GHz       │
+│ VLAN                 │ Wi-Fi 7                │
+│ IPv4 / IPv6          │ EHT                    │
+│ Firewall             │ MLO                    │
+│ NAT                  │ SSIDs                  │
+│ Routing              │ WPA3 Enterprise        │
+│ QoS                  │ RADIUS                 │
+│ VPN                  │ PPSK                   │
+│ IDS/IPS              │ Roaming                │
+│ DPI                  │ RF Management          │
+│ DNS/DHCP             │ Wireless Clients       │
+├──────────────────────┴────────────────────────┤
+│             Common Control Plane              │
+│ configd / clientd / telemetryd / authd        │
+├───────────────────────────────────────────────┤
+│                  QSDK / Linux                 │
+│ nft / FRR / hostapd / ath12k / NSS / PPE     │
+│ SSDK / EDMA / PPEDS                           │
+├───────────────────────────────────────────────┤
+│                    IPQ9574                    │
+└───────────────────────────────────────────────┘

@@ -1,0 +1,1090 @@
+1. Physical Ethernet / Port Management
+ Detect all physical Ethernet ports
+ Stable logical port IDs
+ Enable/disable port
+ Link up/down
+ Link speed detection
+ Duplex detection
+ Auto-negotiation
+ Force supported speeds
+ MTU configuration
+ Flow-control status/configuration
+ RX/TX bytes
+ RX/TX packets
+ PPS
+ Errors
+ Drops
+ CRC errors
+ PHY information
+ PHY temperature if available
+ Cable/link diagnostics where supported
+ Port description/name
+ Port profile assignment
+
+For your hardware:
+
+1G LAN
+1G LAN
+2.5G LAN/WAN
+10G WAN/LAN
+2. Ethernet Switching
+ Linux bridge management
+ Hardware switching where supported
+ Access ports
+ Trunk ports
+ Hybrid ports
+ Native VLAN
+ Tagged VLANs
+ Untagged VLAN
+ Port isolation
+ Protected ports
+ MAC/FDB table
+ Static MAC entries
+ MAC learning
+ MAC limits
+ Storm control
+ Broadcast control
+ Multicast control
+ Unknown-unicast control
+ STP
+ RSTP
+ MSTP
+ BPDU guard
+ Root guard
+ Loop protection
+ LLDP
+ LLDP-MED
+ LACP/bonding
+ IGMP snooping
+ MLD snooping
+3. VLAN Management
+ VLAN creation
+ VLAN deletion
+ VLAN editing
+ VLAN ID 1–4094 validation
+ VLAN names
+ VLAN descriptions
+ VLAN interfaces
+ VLAN bridge membership
+ VLAN on WAN
+ VLAN on LAN
+ VLAN on VPN
+ VLAN on SSID
+ Native VLAN
+ Tagged VLAN
+ Untagged VLAN
+ Management VLAN
+ Guest VLAN
+ IoT VLAN
+ Voice VLAN
+ Corporate VLAN
+ Dynamic VLAN support
+ VLAN-aware firewall policies
+4. Network Objects
+
+The gateway should use first-class objects such as:
+
+Network
+Interface
+Port
+Bridge
+VLAN
+Subnet
+WAN
+Zone
+Route
+VPN
+Client
+Device
+
+Functions:
+
+ Create network
+ Delete network
+ Edit network
+ Network name
+ Network purpose
+ IPv4 subnet
+ IPv6 subnet
+ VLAN
+ Gateway address
+ DHCP configuration
+ DNS configuration
+ Firewall zone
+ Isolation
+ Multicast policy
+ Internet access policy
+ VPN policy
+ WAN preference
+5. IPv4
+ Static IPv4 interfaces
+ DHCP client
+ DHCP server
+ Multiple subnets
+ Secondary addresses
+ ARP
+ Static ARP
+ Proxy ARP when required
+ IPv4 routing
+ NAT
+ Policy routing
+ IPv4 firewall
+ IPv4 telemetry
+6. IPv6
+
+Must be treated as a full feature, not an add-on.
+
+ Static IPv6
+ SLAAC
+ DHCPv6 client
+ DHCPv6 server
+ DHCPv6-PD
+ Prefix delegation
+ Router Advertisement
+ NDP
+ Static neighbors
+ IPv6 DNS
+ IPv6 firewall
+ IPv6 routing
+ IPv6 VPN
+ IPv6 WAN
+ IPv6 VLANs
+ IPv6 policy routing
+ IPv6 telemetry
+ ICMPv6 handling
+7. WAN
+
+Every WAN interface needs:
+
+ DHCP
+ Static IPv4
+ PPPoE
+ IPv6
+ DHCPv6
+ DHCPv6-PD
+ VLAN-tagged WAN
+ Custom DNS
+ MAC cloning
+ MTU
+ MRU
+ MSS clamping
+ WAN gateway
+ Public IP detection
+ Link status
+ Internet status
+ Latency monitoring
+ Packet-loss monitoring
+ DNS test
+ ICMP probe
+ HTTP/HTTPS health probe
+ Custom health target
+ WAN uptime
+ WAN traffic statistics
+ WAN outage history
+8. Multi-WAN
+
+Very important for enterprise gateway functionality.
+
+ WAN1
+ WAN2
+ Additional logical WANs
+ Primary/secondary
+ Automatic failover
+ Automatic failback
+ Load balancing
+ Weighted load balancing
+ Session persistence
+ Sticky flows
+ Per-WAN health checks
+ Per-WAN gateway checks
+ Per-WAN DNS checks
+ Per-WAN latency
+ Per-WAN packet loss
+ Policy routing by network
+ Policy routing by client
+ Policy routing by VLAN
+ Policy routing by application
+ Policy routing by destination
+ VPN over specific WAN
+ WAN failover events
+ WAN quality graphs
+9. Routing
+Static routing
+ IPv4 static routes
+ IPv6 static routes
+ Route metrics
+ Route preference
+ Blackhole route
+ Unreachable route
+ ECMP
+Enterprise dynamic routing
+
+Use FRRouting underneath.
+
+ OSPFv2
+ OSPFv3
+ BGP
+ iBGP
+ eBGP
+ BFD
+ VRRP
+ VRF
+ Route maps
+ Prefix lists
+ Community lists
+ AS-path filtering
+ Route redistribution
+ Route summarization
+ Route filtering
+ BGP communities
+ Neighbor monitoring
+ Routing events
+ Routing table UI
+10. Policy-Based Routing
+ Source network matching
+ Source client matching
+ Source IP matching
+ Destination IP matching
+ Destination network matching
+ Destination port
+ Protocol
+ Application
+ DSCP
+ VLAN
+ WAN selection
+ VPN selection
+ Routing table selection
+ Failover policy
+11. Firewall
+
+The main security model should be zone-based.
+
+Zones could include:
+
+WAN
+LAN
+Gateway
+VPN
+Guest
+IoT
+DMZ
+Management
+
+Functions:
+
+ Stateful firewall
+ Connection tracking
+ Zone-to-zone policies
+ IPv4 rules
+ IPv6 rules
+ Source network
+ Destination network
+ Source address
+ Destination address
+ Source port
+ Destination port
+ Protocol
+ TCP flags
+ ICMP type
+ Schedule
+ Application
+ Device
+ Device group
+ Network group
+ Address group
+ Port group
+ Application group
+ Allow
+ Reject
+ Drop
+ Log
+ Counters
+ Rule ordering
+ Rule enable/disable
+ Rule cloning
+ Firewall hit statistics
+12. NAT
+ Masquerade
+ SNAT
+ DNAT
+ Port forwarding
+ Port ranges
+ Protocol mapping
+ 1:1 NAT
+ Hairpin NAT
+ NAT reflection
+ Source NAT pools
+ Destination NAT policies
+ WAN-specific NAT
+ Multi-WAN NAT
+ NAT exclusions
+ NAT counters
+13. Security Groups / Objects
+
+Reusable objects are essential.
+
+ IP group
+ CIDR group
+ Network group
+ Port group
+ Device group
+ MAC group
+ Application group
+ Domain group
+ Country group
+ Schedule
+ User group
+
+These objects should be reusable in:
+
+Firewall
+NAT
+Routing
+QoS
+VPN
+DNS security
+IDS/IPS
+14. Hardware Acceleration
+
+Especially critical for IPQ9574.
+
+ NSS detection
+ PPE detection
+ EDMA detection
+ SSDK detection
+ Hardware NAT
+ Hardware routing
+ Hardware ACL where supported
+ Hardware QoS where supported
+ PPEDS state
+ Flow-offload statistics
+ Acceleration failures
+ Reason for software fallback
+
+Classify traffic:
+
+FAST
+OBSERVED
+INSPECTED
+
+UI should show:
+
+Hardware accelerated
+Software forwarded
+Security inspected
+15. QoS / Traffic Management
+ Smart Queue
+ CAKE
+ fq_codel
+ WAN bandwidth definition
+ Upload shaping
+ Download shaping
+ Device bandwidth limits
+ Network bandwidth limits
+ VLAN bandwidth limits
+ Application priority
+ Voice priority
+ Gaming/interactive priority
+ Bulk traffic priority
+ DSCP matching
+ DSCP marking
+ Traffic classes
+ Scheduling
+ Per-WAN QoS
+ QoS statistics
+ Offload conflict reporting
+16. DPI / Application Identification
+ Application detection
+ Protocol detection
+ Category detection
+ Application traffic statistics
+ Per-client application stats
+ Per-VLAN application stats
+ Per-network application stats
+ Per-WAN application stats
+ Top applications
+ Top categories
+ Unknown application tracking
+
+Examples:
+
+YouTube
+Netflix
+Microsoft 365
+Zoom
+Teams
+Discord
+BitTorrent
+DNS
+SSH
+HTTP
+HTTPS
+QUIC
+17. IDS / IPS
+ IDS mode
+ IPS mode
+ Signature rules
+ Signature updates
+ Severity levels
+ Threat categories
+ CVE metadata where available
+ Source IP
+ Destination IP
+ Source client
+ Destination client
+ VLAN/network
+ WAN
+ Block action
+ Allowlist
+ Suppression rules
+ Threat history
+ Threat counters
+ Security notifications
+ Per-network IDS/IPS policy
+ Performance mode selection
+18. DNS Security
+ DNS filtering
+ Domain blocking
+ Domain allowlists
+ Malware-domain blocking
+ Phishing blocking
+ Ad blocking
+ Custom blocklists
+ Custom allowlists
+ Client-specific rules
+ Network-specific rules
+ Query logging
+ Block statistics
+ DNS-over-TLS upstream
+ DNS-over-HTTPS upstream
+ DNSSEC validation where appropriate
+19. VPN — WireGuard
+ WireGuard server
+ WireGuard client
+ Remote-user VPN
+ Site-to-site VPN
+ Peer creation
+ Peer QR/config export
+ Allowed IPs
+ Routes
+ DNS
+ Keepalive
+ Key rotation
+ Traffic counters
+ Connection state
+20. VPN — IPsec
+ IKEv2
+ Site-to-site
+ Route-based VPN
+ Policy-based VPN
+ VTI
+ PSK
+ Certificates
+ AES
+ AES-GCM
+ DH groups
+ PFS
+ DPD
+ Rekey
+ NAT-T
+ Multiple subnets
+ Tunnel monitoring
+21. OpenVPN
+ Server
+ Client
+ Site-to-site
+ Certificate management
+ User authentication
+ Route pushing
+ DNS pushing
+ Client status
+ Logs
+22. VPN Policy Routing
+ Entire VLAN through VPN
+ Network through VPN
+ Individual device through VPN
+ Application through VPN
+ Destination through VPN
+ VPN kill switch
+ VPN fallback
+ WAN fallback
+ Split tunneling
+23. SD-WAN
+
+Eventually:
+
+ Site identity
+ Gateway identity
+ Automatic tunnel creation
+ mTLS controller communication
+ Site-to-site overlay
+ Multi-WAN-aware overlay
+ Path quality
+ Dynamic preferred path
+ Failover
+ Route exchange
+ Site topology
+ Central policy
+24. DHCP
+ DHCPv4 server
+ Multiple pools
+ Static reservations
+ Lease duration
+ Lease table
+ DHCP options
+ Option 3
+ Option 6
+ Option 15
+ Custom options
+ PXE options
+ DHCP relay
+ DHCP snooping architecture
+ DHCPv6 server
+ DHCPv6-PD
+25. DNS
+ DNS forwarder
+ DNS cache
+ Local hostnames
+ Static DNS records
+ Conditional forwarding
+ Split DNS
+ Custom upstream servers
+ Per-network DNS
+ DNS statistics
+ DNS query logging
+ Local domains
+26. mDNS / Bonjour
+ mDNS reflector
+ Per-VLAN reflection
+ Selective service forwarding
+ AirPlay discovery
+ Chromecast discovery
+ Printer discovery
+ Security-zone restrictions
+27. Multicast
+ IGMP
+ IGMP proxy
+ IGMP snooping
+ MLD
+ MLD snooping
+ Multicast forwarding
+ Multicast filtering
+ IPTV support where needed
+28. UPnP
+
+Optional and disabled by default:
+
+ UPnP
+ NAT-PMP
+ PCP
+ Per-network enable
+ Secure-interface restrictions
+ Active mapping visibility
+ Mapping logs
+29. Client Management
+
+Unified wired + wireless client database:
+
+ MAC
+ Hostname
+ Vendor
+ IPv4
+ IPv6
+ VLAN
+ Network
+ Port
+ First seen
+ Last seen
+ Online/offline
+ Download bytes
+ Upload bytes
+ Live rate
+ Application traffic
+ DNS activity
+ Security events
+
+Actions:
+
+ Rename
+ Fixed IP
+ Block
+ Quarantine
+ Bandwidth limit
+ VLAN assignment
+ Policy assignment
+30. Topology
+ LLDP discovery
+ ARP
+ NDP
+ FDB
+ DHCP
+ Gateway interfaces
+ Switch ports
+ Wi-Fi clients
+ VPN peers
+ Networks
+ VLAN relationships
+
+Display:
+
+Internet
+  ↓
+Gateway
+  ├── LAN port
+  │    └── client
+  ├── VLAN
+  │    └── clients
+  └── Wi-Fi
+       └── clients
+31. Traffic Analytics
+ Real-time throughput
+ Historical throughput
+ WAN traffic
+ LAN traffic
+ VLAN traffic
+ Client traffic
+ Application traffic
+ Category traffic
+ VPN traffic
+ Firewall traffic
+ IDS traffic
+ Top talkers
+ Top destinations
+ Session counts
+ Flow counts
+32. Connection Tracking
+ Current connections
+ TCP state
+ UDP sessions
+ Source
+ Destination
+ NAT mapping
+ Interface
+ Policy
+ Offloaded status
+ DPI application
+ Bytes
+ Duration
+ Conntrack capacity
+ Conntrack utilization
+33. System Dashboard
+
+Gateway dashboard needs:
+
+ WAN state
+ Internet state
+ Public IP
+ WAN latency
+ Packet loss
+ WAN throughput
+ CPU
+ Memory
+ Load average
+ Temperature
+ Fan
+ Storage
+ Uptime
+ Firmware version
+ Port state
+ Client count
+ VPN status
+ Security alerts
+ Hardware acceleration status
+34. Live Telemetry
+
+Collect from:
+
+rtnetlink
+ethtool
+nftables
+conntrack
+FRR
+NSS
+PPE
+EDMA
+PPEDS
+thermal
+/proc
+/sys
+
+Expose:
+
+ REST snapshots
+ WebSocket/SSE
+ Live graphs
+ Historical metrics
+ Rate calculations
+ Bounded retention
+35. Events
+
+Examples:
+
+WAN_UP
+WAN_DOWN
+WAN_DEGRADED
+
+
+PORT_UP
+PORT_DOWN
+
+
+VPN_UP
+VPN_DOWN
+
+
+BGP_UP
+BGP_DOWN
+
+
+OSPF_UP
+OSPF_DOWN
+
+
+CONFIG_COMMITTED
+CONFIG_ROLLED_BACK
+
+
+IDS_ALERT
+IPS_BLOCK
+
+
+THERMAL_WARNING
+FIRMWARE_UPDATE
+
+Need:
+
+ Event history
+ Severity
+ Filtering
+ Search
+ Notifications
+ Live stream
+36. Logs
+ System
+ Kernel
+ Ethernet
+ WAN
+ DHCP
+ DNS
+ Firewall
+ Routing
+ VPN
+ Security
+ Authentication
+ Audit
+ Upgrade
+
+Plus:
+
+ Rotation
+ Search
+ Download
+ Remote syslog
+ JSON log option
+ SIEM integration
+37. Authentication
+ Initial setup owner
+ Username/password
+ Strong password hashing
+ Secure sessions
+ Session timeout
+ Session revoke
+ CSRF
+ API tokens
+ Login rate limiting
+ TOTP MFA
+ Passkey/WebAuthn architecture
+ Login history
+38. RBAC
+
+Permissions such as:
+
+network.read
+network.write
+
+
+security.read
+security.write
+
+
+routing.read
+routing.write
+
+
+vpn.read
+vpn.write
+
+
+system.read
+system.write
+
+
+firmware.update
+backup.manage
+users.manage
+audit.read
+
+Roles:
+
+ Owner
+ Super Admin
+ Network Admin
+ Security Admin
+ Helpdesk
+ Read Only
+ Custom roles
+39. Audit Trail
+
+Every configuration change needs:
+
+ User
+ Time
+ Source IP
+ Action
+ Resource
+ Old value
+ New value
+ Config revision
+ Transaction ID
+ Success/failure
+
+And:
+
+ Configuration diff
+ Revision history
+ Roll back revision
+40. Transactional Configuration
+
+This is one of the most important gateway functions.
+
+User change
+   ↓
+Candidate
+   ↓
+Validate
+   ↓
+Preflight
+   ↓
+Checkpoint
+   ↓
+Apply
+   ↓
+Health check
+   ↓
+Commit
+
+Failure:
+
+Apply failure
+     ↓
+ROLLBACK
+
+Need:
+
+ Candidate config
+ Running config
+ Atomic changes
+ Validation
+ Safe apply
+ Rollback timer
+ Connectivity confirmation
+ Revision history
+ Schema migration
+41. Backup / Restore
+ Manual backup
+ Scheduled backup
+ Pre-upgrade backup
+ Config DB
+ Users
+ Certificates
+ VPN settings
+ Firewall settings
+ Routing settings
+ Encrypted secrets
+ Restore validation
+ Migration support
+
+Never backup/restore ART as user configuration.
+
+43. System Health
+ Service health
+ Network health
+ WAN health
+ Routing health
+ VPN health
+ DNS health
+ Memory pressure
+ OOM detection
+ Storage pressure
+ Filesystem errors
+ Thermal state
+ NSS health
+ PPE health
+ Watchdog
+ Automatic service recovery
+ Controlled reboot only as last resort
+44. Thermal / Fan
+ Temperature
+ Thermal zones
+ Fan duty
+ Fan status
+ Thermal warning
+ Thermal critical
+ Thermal throttling state
+ Event history
+
+Kernel safety always overrides UI settings.
+
+45. LED / Hardware Status
+
+Central LED state machine:
+
+ Booting
+ Setup required
+ Online
+ WAN down
+ Degraded
+ Firmware update
+ Recovery
+ Factory reset
+ Critical hardware error
+46. Factory Reset
+ Button detection
+ Debounce
+ Hold-time logic
+ UI factory reset
+ Reset user config
+ Reset passwords
+ Reset controller pairing
+ Reset local stats
+ Preserve ART
+ Preserve calibration
+ Preserve MAC
+ Preserve bootloader
+47. Time / NTP
+ NTP client
+ Multiple NTP servers
+ Timezone
+ Manual time fallback
+ Clock status
+ NTP health
+
+Optional:
+
+ NTP server for LAN
+48. Certificates
+ Device certificate
+ HTTPS certificate
+ Certificate upload
+ Certificate generation
+ CA management
+ Certificate expiry warnings
+ VPN certificates
+ RADIUS certificates
+ Controller mTLS certificates
+49. API
+
+Versioned API:
+
+/api/v1/system
+/api/v1/platform
+/api/v1/ports
+/api/v1/networks
+/api/v1/wans
+/api/v1/firewall
+/api/v1/nat
+/api/v1/routing
+/api/v1/vpn
+/api/v1/clients
+/api/v1/telemetry
+/api/v1/events
+/api/v1/logs
+/api/v1/firmware
+/api/v1/backups
+/api/v1/users
+/api/v1/audit
+
+Need:
+
+ OpenAPI
+ Authentication
+ RBAC
+ Validation
+ Pagination
+ Sorting
+ Filtering
+ Stable IDs
+ Error codes
+ Transaction IDs
+50. Local Web Management
+
+Main gateway UI:
+
+Dashboard
+Topology
+Clients
+
+
+Network
+Ports
+WAN
+VLANs
+
+
+Security
+Firewall
+NAT
+IDS/IPS
+DNS Security
+
+
+Routing
+Static Routes
+OSPF
+BGP
+VRF
+Policy Routing
+
+
+VPN
+WireGuard
+IPsec
+OpenVPN
+
+
+Traffic
+Applications
+Flows
+QoS
+
+
+Insights
+Events
+Logs
+
+
+System
+Firmware
+Backup
+Users
+Audit
+51. Local-First Operation
+
+The gateway must continue working if:
+
+Internet is down
+cloud is down
+controller is down
+DNS upstream is down
+
+Local administrator must still be able to:
+
+ Login
+ Configure LAN
+ Configure WAN
+ Configure VLAN
+ Configure firewall
+ Configure VPN
+ View logs
+ Upload firmware
+ Restore backup

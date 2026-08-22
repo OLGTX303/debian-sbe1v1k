@@ -1,0 +1,6 @@
+#!/bin/sh
+# Launcher for the sbegw control plane.
+set -eu
+PYTHONPATH=/opt/sbegw/lib${PYTHONPATH:+:$PYTHONPATH}
+export PYTHONPATH
+exec /usr/bin/python3 -m sbegw.main "$@"

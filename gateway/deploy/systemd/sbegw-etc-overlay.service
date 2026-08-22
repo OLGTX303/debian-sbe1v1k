@@ -1,0 +1,17 @@
+[Unit]
+Description=Make /etc writable with an overlay on the data partition
+Documentation=man:overlay(5)
+# /data must exist first; everything that writes to /etc must come after.
+Requires=sbegw-state.service
+After=sbegw-state.service
+Before=sbegw.service nginx.service ssh.service systemd-logind.service
+Before=network-pre.target
+Wants=network-pre.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/sbegw-etc-overlay
+
+[Install]
+WantedBy=multi-user.target

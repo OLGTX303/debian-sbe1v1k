@@ -1,0 +1,15 @@
+[Unit]
+Description=Mount writable state for the gateway control plane
+Documentation=file:/opt/sbegw/README.md
+After=local-fs.target
+# Everything that writes state must wait for this.
+Before=sbegw.service sbegw-tls.service nginx.service dnsmasq.service
+RequiresMountsFor=/run
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/opt/sbegw/bin/sbegw-mount-state
+
+[Install]
+WantedBy=multi-user.target

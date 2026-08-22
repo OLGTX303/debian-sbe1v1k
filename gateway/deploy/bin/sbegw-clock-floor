@@ -1,0 +1,57 @@
+#!/bin/sh
+# Never let the system clock start out earlier than the image was built.
+#
+# This board has no RTC at all — /dev/rtc* does not exist and hwclock reports
+# "Cannot access the Hardware Clock via any known method" — so every boot starts
+# from whatever the kernel decides, which is far in the past. The visible cost is
+# that apt refuses to work:
+#
+#   E: Release file for http://deb.debian.org/debian/dists/bookworm/InRelease is
+#      not valid yet (invalid for another 74d 13h 29min 47s)
+#
+# and TLS certificate validation fails the same way, so https downloads break
+# too. systemd would handle this via /usr/lib/clock-epoch, but that landed in
+# systemd 254 and bookworm ships 252.
+#
+# The floor is the later of:
+#   * the build stamp shipped in the image
+#   * systemd-timesyncd's saved clock, which persists on the writable root and
+#     is therefore roughly "when this device last ran"
+#
+# The clock is only ever moved forward. systemd-timesyncd corrects it properly
+# once the WAN is up; this just stops the window before that from being useless.
+set -u
+
+STAMP=/usr/lib/sbegw/build-epoch
+SYNCED=/var/lib/systemd/timesync/clock
+
+log() { echo "sbegw-clock-floor: $*"; }
+
+floor=0
+for candidate in "$STAMP" "$SYNCED"; do
+    [ -e "$candidate" ] || continue
+    stamp=$(date -r "$candidate" +%s 2>/dev/null) || continue
+    case "$stamp" in
+        ''|*[!0-9]*) continue ;;
+    esac
+    [ "$stamp" -gt "$floor" ] && floor=$stamp
+done
+
+if [ "$floor" -eq 0 ]; then
+    log "no build stamp and no saved clock; leaving the clock alone"
+    exit 0
+fi
+
+now=$(date +%s)
+if [ "$now" -ge "$floor" ]; then
+    log "clock is $(date -u -d "@$now" '+%Y-%m-%d %H:%M:%S') UTC, at or past the floor"
+    exit 0
+fi
+
+if date -s "@$floor" >/dev/null 2>&1; then
+    log "clock was $(date -u -d "@$now" '+%Y-%m-%d %H:%M:%S') UTC;" \
+        "moved forward to $(date -u -d "@$floor" '+%Y-%m-%d %H:%M:%S') UTC"
+else
+    log "could not set the clock; apt and TLS may reject dates"
+fi
+exit 0

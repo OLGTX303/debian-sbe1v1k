@@ -1,0 +1,68 @@
+[Unit]
+Description=SBE1V1K gateway control plane (netd/wifid/telemetryd/api)
+Documentation=file:/opt/sbegw/README.md
+After=network-pre.target
+Wants=network-pre.target
+# The ART MAC addresses must be on the interfaces before netd touches them, or
+# the ports come up with driver-generated MACs. This unit used to be pulled in by
+# systemd-networkd, which the control plane masks.
+After=sbe1v1k-art-init.service sbe1v1k-apply-macs.service
+Wants=sbe1v1k-apply-macs.service
+# Wireless drivers are pulled in but deliberately NOT ordered before us.
+# sbe1v1k-drivers Requires=wififw.service, and wififw mounts a SquashFS from
+# eMMC; when that hung, "After=sbe1v1k-drivers.service" meant the entire
+# management plane never started — and because of Before=nginx.service, nginx
+# never started either, so the device had no UI at all. The control plane
+# discovers radios at runtime and reports none if they are absent, so it must
+# never wait on wireless firmware. Likewise systemd-modules-load, whose job
+# systemd is willing to delete to break an ordering cycle.
+Wants=sbe1v1k-drivers.service
+# /data lives on a separate partition because the root filesystem is SquashFS
+# and read-only; without it the config store cannot be written.
+Requires=sbegw-state.service
+After=sbegw-state.service
+# StartLimit* are [Unit] directives — in [Service] systemd ignores them, so the
+# crash-loop guard silently did nothing.
+StartLimitBurst=8
+StartLimitIntervalSec=120
+# The control plane owns the network, so nothing else should be configuring it.
+Conflicts=systemd-networkd.service
+
+[Service]
+Type=simple
+ExecStartPre=/bin/mkdir -p /run/sbegw /data/sbegw
+# Validate the stored config, but do not let a bad one block startup: the
+# supervisor falls back to defaults, and an unmanageable box is worse than a
+# rejected setting. The leading '-' makes the failure non-fatal.
+ExecStartPre=-/opt/sbegw/bin/sbegw --check
+ExecStart=/opt/sbegw/bin/sbegw --host 127.0.0.1 --port 8081
+Restart=always
+RestartSec=3
+KillSignal=SIGTERM
+# dnsmasq daemonises but stays in this unit's cgroup, and the default
+# KillMode=control-group means every restart of the control plane also killed
+# DHCP/DNS. With Restart=always that turned one crash into a dead LAN, leaving a
+# stale pid file behind — exactly what --diagnose showed. Kill only our own
+# process; the health loop revives dnsmasq if it is genuinely gone.
+KillMode=process
+TimeoutStopSec=20
+
+# The control plane needs raw network control, but nothing beyond it.
+#
+# CAP_SETUID/CAP_SETGID/CAP_CHOWN are here for the daemons netd launches, not for
+# sbegw itself: dnsmasq drops privileges to user/group `dip` and chowns its lease
+# file. Children inherit this bounding set, so without them dnsmasq died at
+# startup with "failed to change group-id to dip: Operation not permitted" — the
+# LAN had no DHCP while everything else looked healthy. Leaving them out does not
+# make the system safer; it just stops dnsmasq from de-privileging itself.
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW CAP_NET_BIND_SERVICE CAP_SYS_MODULE CAP_KILL CAP_SYS_ADMIN CAP_SETUID CAP_SETGID CAP_CHOWN CAP_DAC_OVERRIDE
+NoNewPrivileges=yes
+ProtectHome=yes
+ProtectSystem=false
+PrivateTmp=no
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=SBEGW_STATE=/data/sbegw
+
+[Install]
+WantedBy=multi-user.target

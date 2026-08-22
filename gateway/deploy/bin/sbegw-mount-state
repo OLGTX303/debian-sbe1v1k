@@ -1,0 +1,147 @@
+#!/bin/sh
+# Mount a writable filesystem at /data for the control plane's state.
+#
+# The root filesystem is SquashFS and therefore read-only, so /data inside the
+# image cannot be written. Without this the TLS certificate, the configuration
+# database and the DHCP lease file all fail to be created, nginx never starts,
+# and the device comes up with no management access at all — which is exactly
+# what happened on the first boot of this build.
+#
+# Target is the platform's data partition, `rootfs_data`. Its label and size
+# differ between layouts — on the repartitioned SBE1V1K it is p30 at ~6.5 GB with
+# no filesystem yet, while the factory layout had a 512 MiB `rootfs_data` holding
+# the vendor OpenWrt overlay plus a `rootfs_data_1` spare. Both names are tried.
+#
+# A partition with no filesystem is formatted ONLY when its first megabytes are
+# blank, so an unrecognised-but-populated partition is never destroyed. That
+# check can be overridden with /etc/sbegw/format-state.
+#
+# If nothing can be mounted, a tmpfs is used so the device stays manageable;
+# configuration will not survive a reboot, which is far better than no way in.
+set -u
+
+STATE=/data
+SUBDIR=sbegw
+# In preference order. rootfs_data is the platform's designated data partition.
+CANDIDATES="rootfs_data rootfs_data_1 edata econfig"
+
+LOGFILE=/run/sbegw/state-mount.log
+mkdir -p /run/sbegw 2>/dev/null || true
+: > "$LOGFILE" 2>/dev/null || true
+# Log to both the journal and a file, so `sbegw --diagnose` can always explain
+# why /data ended up where it did — a silent tmpfs fallback is indistinguishable
+# from a working persistent mount until the first reboot loses the config.
+log() {
+    echo "sbegw-mount-state: $*"
+    echo "$*" >> "$LOGFILE" 2>/dev/null || true
+}
+
+log "candidates: $CANDIDATES"
+for _u in /sys/block/mmcblk*/mmcblk*p*/uevent; do
+    [ -r "$_u" ] || continue
+    _n=$(sed -n 's/^PARTNAME=//p' "$_u")
+    _d=$(basename "$(dirname "$_u")")
+    log "  partition /dev/$_d PARTNAME='$_n'"
+done
+
+if mountpoint -q "$STATE"; then
+    log "$STATE is already mounted"
+    mkdir -p "$STATE/$SUBDIR"
+    exit 0
+fi
+mkdir -p "$STATE" 2>/dev/null || true
+
+find_part() {
+    for uevent in /sys/block/mmcblk*/mmcblk*p*/uevent; do
+        [ -r "$uevent" ] || continue
+        name=$(sed -n 's/^PARTNAME=//p' "$uevent")
+        case "$name" in
+            "$1"|"0:$1") echo "/dev/$(basename "$(dirname "$uevent")")"; return 0 ;;
+        esac
+    done
+    return 1
+}
+
+looks_blank() {
+    # Read the first 8 MiB and call it unused only if every byte is 0x00/0xFF.
+    # This is the guard that makes automatic formatting safe: a partition with
+    # any real content fails it and is left alone.
+    dev="$1"
+    out=$(dd if="$dev" bs=1M count=8 status=none 2>/dev/null \
+          | tr -d '\000\377' | wc -c)
+    if [ "${out:-1}" = "0" ]; then
+        log "  $dev first 8 MiB are blank"
+        return 0
+    fi
+    log "  $dev contains data in its first 8 MiB ($out non-blank bytes)"
+    return 1
+}
+
+try_mount() {
+    dev="$1"; label="$2"
+
+    fstype=""
+    if command -v blkid >/dev/null 2>&1; then
+        fstype=$(blkid -o value -s TYPE "$dev" 2>/dev/null || true)
+        log "  blkid $dev -> '${fstype:-<none>}'"
+    else
+        log "  blkid is not available; cannot identify $dev"
+    fi
+
+    if [ -z "$fstype" ]; then
+        if [ -f /etc/sbegw/format-state ] || looks_blank "$dev"; then
+            log "$dev ($label) has no filesystem and looks unused; creating ext4"
+            mkfs.ext4 -q -F -L sbegw-state "$dev" || {
+                log "  mkfs.ext4 failed on $dev"
+                return 1
+            }
+            fstype=ext4
+        else
+            log "$dev ($label) has no filesystem but is not blank; refusing to format"
+            log "  create /etc/sbegw/format-state to override"
+            return 1
+        fi
+    fi
+
+    case "$fstype" in
+        ext2|ext3|ext4) ;;
+        *) log "$dev ($label) holds $fstype, which is not supported here"; return 1 ;;
+    esac
+
+    # Recover any dirty journal rather than mounting unclean.
+    if command -v e2fsck >/dev/null 2>&1; then
+        e2fsck -p "$dev" >/dev/null 2>&1 || true
+    fi
+
+    if mount -o rw,noatime "$dev" "$STATE" 2>/dev/null; then
+        log "mounted $dev ($label, $fstype) at $STATE"
+        return 0
+    fi
+    log "failed to mount $dev ($label, $fstype)"
+    return 1
+}
+
+for label in $CANDIDATES; do
+    dev=$(find_part "$label") || { log "no partition labelled $label"; continue; }
+    [ -b "$dev" ] || continue
+    if try_mount "$dev" "$label"; then
+        mkdir -p "$STATE/$SUBDIR"
+        # Prove it is actually writable before declaring success: a filesystem
+        # can mount read-only after an error and then every write still fails.
+        if : > "$STATE/$SUBDIR/.writable" 2>/dev/null; then
+            rm -f "$STATE/$SUBDIR/.writable"
+            exit 0
+        fi
+        log "$STATE mounted but not writable; unmounting and trying the next candidate"
+        umount "$STATE" 2>/dev/null || true
+    fi
+done
+
+log "no writable partition available; falling back to tmpfs"
+log "  CONFIGURATION WILL NOT PERSIST ACROSS A REBOOT"
+if mount -t tmpfs -o size=192m,mode=0755 sbegw-state "$STATE"; then
+    mkdir -p "$STATE/$SUBDIR"
+    exit 0
+fi
+log "tmpfs mount failed as well; the control plane cannot store state"
+exit 1

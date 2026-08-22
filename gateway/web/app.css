@@ -1,0 +1,602 @@
+/* sbegw management UI.
+ *
+ * The palette and metrics are lifted from the UniFi Network web app shipped in
+ * the UCG-Fiber image (app-unifi/angular/*/css) rather than approximated:
+ *   accent   #006fff   hover #0068f0   deep #003c9e
+ *   success  #39cc64   danger #f03a3e   warning #f5a623   violet #a252e3
+ *   neutrals #333543 #525461 #616770 #7e8190 #969ba3 #a4a7b5 #c2c4ce
+ *            #d6d9e2 #e5e7ed #f1f2f4
+ *   dark     #1c1e2d #242635 #333543   (blue-tinted, not neutral grey)
+ * UniFi runs dense: 11-12px body text, 3-4px control radius. Matching that is
+ * most of what makes this read as a network appliance rather than a web page.
+ */
+
+@font-face { font-family: Lato; font-weight: 400; font-display: swap;
+  src: url("fonts/Lato-Regular.woff2") format("woff2"); }
+@font-face { font-family: Inter; font-weight: 400; font-display: swap;
+  src: url("fonts/Inter-Regular.woff2") format("woff2"); }
+@font-face { font-family: Inter; font-weight: 600; font-display: swap;
+  src: url("fonts/Inter-SemiBold.woff2") format("woff2"); }
+@font-face { font-family: Inter; font-weight: 700; font-display: swap;
+  src: url("fonts/Inter-Bold.woff2") format("woff2"); }
+
+:root {
+  --accent: #006fff;
+  --accent-hover: #0068f0;
+  --accent-deep: #003c9e;
+  --accent-soft: rgba(0, 111, 255, .10);
+  --accent-line: rgba(0, 111, 255, .38);
+  --green: #39cc64;
+  --green-soft: rgba(57, 204, 100, .13);
+  --red: #f03a3e;
+  --red-soft: rgba(240, 58, 62, .12);
+  --amber: #f5a623;
+  --amber-soft: rgba(245, 166, 35, .14);
+  --violet: #a252e3;
+  --violet-soft: rgba(162, 82, 227, .13);
+  --sky: #57a0ff;
+
+  /* light theme (UniFi's default) */
+  --bg: #f1f2f4;
+  --surface: #ffffff;
+  --surface-2: #f7f8f9;
+  --surface-3: #eef0f3;
+  --line: #e5e7ed;
+  --line-strong: #d6d9e2;
+  --text: #333543;
+  --text-2: #616770;
+  --text-3: #7e8190;
+  --text-4: #a4a7b5;
+  --shadow: 0 1px 1px rgba(28, 30, 45, .04), 0 1px 3px rgba(28, 30, 45, .06);
+  --shadow-lg: 0 6px 24px rgba(28, 30, 45, .14);
+
+  --r-sm: 3px;
+  --r: 4px;
+  --r-md: 6px;
+  --r-lg: 10px;
+  --pill: 10px;
+  --nav-w: 216px;
+  --top-h: 48px;
+  --sans: Lato, Inter, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+
+:root[data-theme="dark"] {
+  --bg: #1c1e2d;
+  --surface: #242635;
+  --surface-2: #2a2c3d;
+  --surface-3: #303247;
+  --line: #333543;
+  --line-strong: #3f4256;
+  --text: #eef0f4;
+  --text-2: #a4a7b5;
+  --text-3: #8b8fa1;
+  --text-4: #6f7383;
+  --accent-soft: rgba(0, 111, 255, .18);
+  --shadow: 0 1px 2px rgba(0, 0, 0, .35);
+  --shadow-lg: 0 8px 28px rgba(0, 0, 0, .5);
+  --green-soft: rgba(57, 204, 100, .16);
+  --red-soft: rgba(240, 58, 62, .16);
+  --amber-soft: rgba(245, 166, 35, .16);
+  --violet-soft: rgba(162, 82, 227, .18);
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font: 400 12px/1.45 var(--sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+code, .mono { font-family: var(--mono); font-size: 11px; letter-spacing: -.1px; }
+svg { display: block; }
+
+/* ---------------------------------------------------------------- layout */
+
+.app { display: grid; grid-template-columns: var(--nav-w) 1fr; min-height: 100vh; }
+
+.side {
+  background: var(--surface); border-right: 1px solid var(--line);
+  display: flex; flex-direction: column; overflow: hidden;
+  position: sticky; top: 0; height: 100vh;
+}
+.brand {
+  display: flex; align-items: center; gap: 9px; padding: 0 14px;
+  height: var(--top-h); border-bottom: 1px solid var(--line); flex: 0 0 auto;
+}
+.brand .logo {
+  width: 24px; height: 24px; border-radius: var(--r); background: var(--accent);
+  color: #fff; display: grid; place-items: center; flex: 0 0 auto;
+}
+.brand .name {
+  font-weight: 700; font-size: 12px; letter-spacing: .01em; line-height: 1.2;
+}
+.brand .sub {
+  font-size: 10px; color: var(--text-4); line-height: 1.2; margin-top: 1px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+.nav { overflow-y: auto; padding: 6px 6px 16px; flex: 1 1 auto; }
+.nav .group { margin-top: 10px; }
+.nav .group:first-child { margin-top: 2px; }
+.nav .group > .label {
+  font-size: 9.5px; text-transform: uppercase; letter-spacing: .09em;
+  color: var(--text-4); padding: 5px 9px 3px; font-weight: 700;
+}
+.nav a {
+  display: flex; align-items: center; gap: 8px; padding: 5px 9px;
+  border-radius: var(--r); color: var(--text-2); font-size: 12px; cursor: pointer;
+  line-height: 1.5; position: relative;
+}
+.nav a:hover { background: var(--surface-2); color: var(--text); text-decoration: none; }
+.nav a.active { background: var(--accent-soft); color: var(--accent); font-weight: 700; }
+.nav a.active::before {
+  content: ""; position: absolute; left: -6px; top: 5px; bottom: 5px; width: 2px;
+  background: var(--accent); border-radius: 0 2px 2px 0;
+}
+.nav a .ico { flex: 0 0 16px; color: currentColor; opacity: .9; }
+.nav a .badge {
+  margin-left: auto; background: var(--red); color: #fff; border-radius: 8px;
+  font-size: 9.5px; padding: 0 5px; font-weight: 700; line-height: 15px;
+  min-width: 16px; text-align: center;
+}
+
+.side-foot {
+  padding: 8px 10px; border-top: 1px solid var(--line);
+  display: flex; align-items: center; gap: 6px;
+}
+.side-foot .who { min-width: 0; flex: 1; }
+.side-foot .who b { font-size: 11px; display: block; }
+.side-foot .who span { font-size: 10px; color: var(--text-4); }
+
+.main { display: flex; flex-direction: column; min-width: 0; }
+.top {
+  height: var(--top-h); background: var(--surface);
+  border-bottom: 1px solid var(--line);
+  display: flex; align-items: center; gap: 10px; padding: 0 16px;
+  position: sticky; top: 0; z-index: 20;
+}
+.top h1 { font-size: 13px; font-weight: 700; margin: 0; }
+.top .spacer { flex: 1; }
+.content { padding: 16px; max-width: 1560px; width: 100%; }
+
+/* ---------------------------------------------------------------- surfaces */
+
+.card {
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--r-md); box-shadow: var(--shadow);
+}
+.card > header {
+  padding: 9px 12px; border-bottom: 1px solid var(--line);
+  display: flex; align-items: center; gap: 8px; min-height: 38px;
+}
+.card > header h2 {
+  font-size: 11.5px; font-weight: 700; margin: 0; letter-spacing: .01em;
+}
+.card > header .spacer { flex: 1; }
+.card .body { padding: 12px; }
+.card .body.tight { padding: 0; }
+.card .body + .body { border-top: 1px solid var(--line); }
+
+.grid { display: grid; gap: 10px; }
+.grid.c2 { grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+.grid.c3 { grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); }
+.grid.c4 { grid-template-columns: repeat(auto-fit, minmax(185px, 1fr)); }
+
+/* ------------------------------------------------------------------ stats */
+
+.stat .label {
+  font-size: 9.5px; text-transform: uppercase; letter-spacing: .09em;
+  color: var(--text-4); font-weight: 700;
+}
+.stat .value {
+  font-size: 22px; font-weight: 300; margin-top: 3px; letter-spacing: -.02em;
+  line-height: 1.1; font-variant-numeric: tabular-nums;
+}
+.stat .value .unit { font-size: 11px; color: var(--text-3); font-weight: 400; }
+.stat .hint { font-size: 10.5px; color: var(--text-3); margin-top: 3px; }
+
+.kv { display: flex; flex-direction: column; gap: 1px; }
+.kv .k {
+  font-size: 9.5px; text-transform: uppercase; letter-spacing: .08em;
+  color: var(--text-4); font-weight: 700;
+}
+.kv .v { font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+/* ------------------------------------------------------------------ pills */
+
+.pill {
+  display: inline-flex; align-items: center; gap: 4px; padding: 1px 6px;
+  border-radius: var(--pill); font-size: 10px; font-weight: 700;
+  white-space: nowrap; line-height: 16px; letter-spacing: .01em;
+}
+.pill .dot {
+  width: 5px; height: 5px; border-radius: 50%; background: currentColor;
+  flex: 0 0 5px;
+}
+.pill.ok { color: #1f9b46; background: var(--green-soft); }
+:root[data-theme="dark"] .pill.ok { color: var(--green); }
+.pill.warn { color: #b6740c; background: var(--amber-soft); }
+:root[data-theme="dark"] .pill.warn { color: var(--amber); }
+.pill.bad { color: #cf2226; background: var(--red-soft); }
+:root[data-theme="dark"] .pill.bad { color: var(--red); }
+.pill.info { color: var(--accent); background: var(--accent-soft); }
+.pill.mlo { color: #7c34c4; background: var(--violet-soft); }
+:root[data-theme="dark"] .pill.mlo { color: var(--violet); }
+.pill.mute { color: var(--text-3); background: var(--surface-3); }
+
+.tag {
+  display: inline-block; padding: 0 5px; border-radius: var(--r-sm);
+  background: var(--surface-3); color: var(--text-2); font-size: 10px;
+  font-weight: 700; line-height: 16px; margin-right: 3px;
+}
+
+/* --------------------------------------------------------------- controls */
+
+button, .btn {
+  font: inherit; font-size: 11.5px; font-weight: 700; padding: 4px 10px;
+  border-radius: var(--r); border: 1px solid var(--line-strong); cursor: pointer;
+  background: var(--surface); color: var(--text); line-height: 18px;
+  display: inline-flex; align-items: center; gap: 5px;
+}
+button:hover { background: var(--surface-2); border-color: var(--text-4); }
+button:focus-visible { outline: 2px solid var(--accent-line); outline-offset: 1px; }
+button.primary {
+  background: var(--accent); border-color: var(--accent); color: #fff;
+}
+button.primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+button.danger { color: var(--red); border-color: rgba(240, 58, 62, .45); }
+button.danger:hover { background: var(--red-soft); border-color: var(--red); }
+button.ghost { border-color: transparent; background: transparent; color: var(--text-2); }
+button.ghost:hover { background: var(--surface-2); color: var(--text); border-color: transparent; }
+button.sm { padding: 2px 7px; font-size: 11px; line-height: 16px; }
+button.icon { padding: 4px; border-color: transparent; background: transparent;
+  color: var(--text-3); }
+button.icon:hover { background: var(--surface-2); color: var(--text); }
+button:disabled { opacity: .45; cursor: not-allowed; }
+
+.seg { display: inline-flex; border: 1px solid var(--line-strong);
+  border-radius: var(--r); overflow: hidden; }
+.seg button {
+  border: none; border-radius: 0; background: var(--surface); font-weight: 700;
+  padding: 3px 9px;
+}
+.seg button + button { border-left: 1px solid var(--line-strong); }
+.seg button.on { background: var(--accent); color: #fff; }
+
+label.field { display: block; margin-bottom: 10px; }
+label.field > span {
+  display: block; font-size: 10px; font-weight: 700; color: var(--text-2);
+  margin-bottom: 3px; text-transform: uppercase; letter-spacing: .06em;
+}
+label.field > span .help {
+  font-weight: 400; color: var(--text-4); text-transform: none;
+  letter-spacing: 0; font-size: 10.5px;
+}
+input, select, textarea {
+  font: inherit; font-size: 12px; width: 100%; padding: 4px 7px;
+  border: 1px solid var(--line-strong); border-radius: var(--r);
+  background: var(--surface); color: var(--text); line-height: 18px;
+}
+select { padding-right: 4px; }
+input:focus, select:focus, textarea:focus {
+  outline: none; border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+input[type="checkbox"] { width: auto; accent-color: var(--accent); margin: 0; }
+label.field.inline { display: flex; align-items: center; gap: 6px; }
+label.field.inline > span { margin: 0; text-transform: none; letter-spacing: 0;
+  font-size: 11.5px; font-weight: 400; color: var(--text); }
+.row { display: flex; gap: 10px; flex-wrap: wrap; }
+.row > * { flex: 1 1 160px; min-width: 0; }
+.inline { display: flex; align-items: center; gap: 6px; }
+
+/* ---------------------------------------------------------------- tables */
+
+table { width: 100%; border-collapse: collapse; font-size: 11.5px; }
+th {
+  text-align: left; font-size: 9.5px; text-transform: uppercase;
+  letter-spacing: .08em; color: var(--text-4); font-weight: 700;
+  padding: 7px 10px; border-bottom: 1px solid var(--line); white-space: nowrap;
+  background: var(--surface-2); position: sticky; top: 0;
+}
+td { padding: 7px 10px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+/* Any table body scrolls itself rather than widening the page. Relying on each
+   call site remembering .table-wrap is how a stray horizontal scrollbar
+   appeared on the dashboard. */
+.card .body.tight { overflow-x: auto; }
+tr:last-child td { border-bottom: none; }
+tbody tr:hover { background: var(--surface-2); }
+.num { text-align: right; font-variant-numeric: tabular-nums; }
+.table-wrap { overflow-x: auto; }
+td b { font-weight: 700; }
+
+/* ----------------------------------------------------------------- meters */
+
+.bar { height: 4px; border-radius: 2px; background: var(--surface-3); overflow: hidden; }
+.bar > i { display: block; height: 100%; background: var(--accent); border-radius: 2px; }
+.bar.ok > i { background: var(--green); }
+.bar.warn > i { background: var(--amber); }
+.bar.bad > i { background: var(--red); }
+.spark { display: block; width: 100%; height: 38px; }
+
+.meter-row { margin-bottom: 9px; }
+.meter-row:last-child { margin-bottom: 0; }
+.meter-row .top-line {
+  display: flex; justify-content: space-between; align-items: baseline;
+  font-size: 11px; margin-bottom: 3px;
+}
+.meter-row .top-line b { font-variant-numeric: tabular-nums; }
+
+/* ---------------------------------------------------------------- banners */
+
+.banner {
+  display: flex; align-items: flex-start; gap: 8px; padding: 8px 11px;
+  border-radius: var(--r); margin-bottom: 10px; font-size: 11.5px;
+  border: 1px solid transparent; line-height: 1.5;
+}
+.banner .ico { flex: 0 0 15px; margin-top: 1px; }
+.banner.warn { background: var(--amber-soft); border-color: rgba(245, 166, 35, .35);
+  color: #7a5106; }
+:root[data-theme="dark"] .banner.warn { color: #f7c777; }
+.banner.bad { background: var(--red-soft); border-color: rgba(240, 58, 62, .35);
+  color: #a11b1e; }
+:root[data-theme="dark"] .banner.bad { color: #f79b9d; }
+.banner.info { background: var(--accent-soft); border-color: var(--accent-line);
+  color: var(--accent-deep); }
+:root[data-theme="dark"] .banner.info { color: var(--sky); }
+.banner .spacer { flex: 1; }
+
+.empty { padding: 26px 12px; text-align: center; color: var(--text-4);
+  font-size: 11.5px; }
+.muted { color: var(--text-2); }
+.dim { color: var(--text-3); }
+.faint { color: var(--text-4); }
+.small { font-size: 10.5px; }
+.mt { margin-top: 10px; }
+.mb { margin-bottom: 10px; }
+.nowrap { white-space: nowrap; }
+
+/* ------------------------------------------------------------ MLO cards */
+
+.mlo-card { border-left: 2px solid var(--violet); }
+.link-row {
+  display: grid; grid-template-columns: 74px 1fr auto; gap: 10px;
+  align-items: center; padding: 6px 0; border-bottom: 1px solid var(--line);
+}
+.link-row:last-child { border-bottom: none; }
+.link-row .lid {
+  font-size: 9.5px; font-weight: 700; color: var(--violet);
+  text-transform: uppercase; letter-spacing: .07em;
+}
+.link-metrics { display: flex; gap: 12px; flex-wrap: wrap; font-size: 10.5px;
+  color: var(--text-3); }
+.link-metrics b { font-weight: 700; font-variant-numeric: tabular-nums;
+  color: var(--text); }
+
+/* --------------------------------------------------- channel analyzer */
+
+/* Band selector, in the style of a WiFi analyzer's segmented tabs. */
+.tabs { display: flex; gap: 4px; flex-wrap: wrap; }
+.tabs button {
+  border: 1px solid transparent; background: transparent; color: var(--text-2);
+  border-radius: var(--pill); padding: 3px 11px; font-weight: 700;
+  font-size: 11.5px;
+}
+.tabs button:hover { background: var(--surface-3); border-color: transparent; }
+.tabs button.on {
+  background: var(--accent); color: #fff; border-color: var(--accent);
+}
+.tabs button.on:hover { background: var(--accent-hover); }
+
+/* The host measures itself and the SVG is built in real pixels, so text is
+   never scaled — see spectrumChart(). */
+.chart-host { width: 100%; min-height: 264px; }
+.chart { display: block; width: 100%; height: 264px; }
+.chart .grid { stroke: var(--line); stroke-width: 1; }
+.chart .grid.minor { stroke: var(--line); opacity: .55; }
+.chart .axis-text {
+  fill: var(--text-3); font-size: 12px; font-family: var(--sans);
+  font-weight: 700;
+}
+.chart .chan-text {
+  fill: var(--text-3); font-size: 12px; font-family: var(--sans);
+}
+.chart .chan-text.dfs { fill: var(--amber); }
+.chart .ssid-text {
+  font-size: 11px; font-family: var(--sans); font-weight: 700;
+}
+.chart .frame { stroke: var(--line-strong); fill: none; }
+.chart .util { fill: var(--red); opacity: .10; }
+.chart .own-band { fill: var(--accent); opacity: .05; }
+
+/* AP list under the chart. */
+.ap-list { display: flex; flex-direction: column; }
+.ap-row {
+  display: grid; grid-template-columns: 12px 1fr auto auto;
+  gap: 10px; align-items: center; padding: 7px 2px;
+  border-bottom: 1px solid var(--line);
+}
+.ap-row:last-child { border-bottom: none; }
+.ap-row .swatch {
+  width: 9px; height: 9px; border-radius: 50%; justify-self: center;
+}
+.ap-row .who { min-width: 0; }
+.ap-row .who b { font-size: 12px; }
+.ap-row .who .sub {
+  font-size: 10px; color: var(--text-4); font-family: var(--mono);
+  display: block; margin-top: 1px;
+}
+.ap-row .rssi {
+  font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.ap-row .rssi.strong { color: var(--green); }
+.ap-row .rssi.mid { color: var(--amber); }
+.ap-row .rssi.weak { color: var(--text-3); }
+.ap-row .meta {
+  font-size: 10.5px; color: var(--text-3); text-align: right; white-space: nowrap;
+}
+
+.chan-grid { display: flex; flex-wrap: wrap; gap: 3px; }
+.chan {
+  min-width: 34px; padding: 3px 4px; border-radius: var(--r-sm);
+  border: 1px solid var(--line-strong); background: var(--surface);
+  font-size: 10px; text-align: center; line-height: 1.35; cursor: default;
+}
+.chan b { display: block; font-size: 11px; font-variant-numeric: tabular-nums; }
+.chan .sc { font-size: 9px; color: var(--text-4); }
+.chan.current { border-color: var(--accent); background: var(--accent-soft);
+  color: var(--accent); }
+.chan.best { border-color: var(--green); background: var(--green-soft); }
+.chan.busy { border-color: rgba(240,58,62,.4); background: var(--red-soft); }
+.chan.dfs::after { content: "DFS"; display: block; font-size: 8px;
+  color: var(--amber); font-weight: 700; }
+
+/* --------------------------------------------------------------- topology */
+
+.tree { font-size: 11.5px; }
+.tree ul { list-style: none; margin: 0; padding-left: 17px;
+  border-left: 1px solid var(--line); }
+.tree > ul { padding-left: 2px; border-left: none; }
+.tree li { padding: 1px 0; }
+.tree .node { display: inline-flex; align-items: center; gap: 6px;
+  padding: 2px 5px; border-radius: var(--r-sm); }
+.tree .node:hover { background: var(--surface-2); }
+.tree .node .ico { flex: 0 0 14px; color: var(--text-3); }
+
+/* ------------------------------------------------------------- auth page */
+
+.auth-wrap {
+  min-height: 100vh; display: grid; place-items: center; padding: 20px;
+  background: var(--bg);
+}
+.auth-card { width: 100%; max-width: 344px; box-shadow: var(--shadow-lg); }
+.auth-card .brand { border: none; justify-content: center; height: auto;
+  padding: 20px 0 4px; }
+.auth-card h2 { text-align: center; font-size: 14px; margin: 0 0 3px; }
+.auth-card .lead { text-align: center; color: var(--text-3); font-size: 11.5px;
+  margin: 0 0 16px; }
+.auth-err {
+  background: var(--red-soft); color: #a11b1e; padding: 7px 10px;
+  border-radius: var(--r); font-size: 11px; margin-bottom: 11px;
+}
+:root[data-theme="dark"] .auth-err { color: #f79b9d; }
+
+/* --------------------------------------------------------- toasts, modals */
+
+.toast-host {
+  position: fixed; right: 14px; bottom: 14px; display: flex;
+  flex-direction: column; gap: 6px; z-index: 100; max-width: 380px;
+}
+.toast {
+  background: var(--surface); border: 1px solid var(--line);
+  border-left: 2px solid var(--accent); border-radius: var(--r);
+  padding: 8px 11px; box-shadow: var(--shadow-lg); font-size: 11.5px;
+}
+.toast.bad { border-left-color: var(--red); }
+.toast.ok { border-left-color: var(--green); }
+
+.modal-host {
+  position: fixed; inset: 0; background: rgba(28, 30, 45, .5);
+  display: grid; place-items: center; z-index: 200; padding: 16px;
+  backdrop-filter: blur(1px);
+}
+.modal { width: 100%; max-width: 540px; max-height: 88vh; overflow: auto;
+  box-shadow: var(--shadow-lg); }
+.modal-foot { display: flex; justify-content: flex-end; gap: 6px; }
+
+@media (max-width: 900px) {
+  .app { grid-template-columns: 1fr; }
+  .side { position: fixed; z-index: 50; width: var(--nav-w);
+    transform: translateX(-100%); transition: transform .16s ease; }
+  .app.nav-open .side { transform: translateX(0); }
+  .content { padding: 10px; }
+}
+
+/* ------------------------------------------------- wireless-network form
+   Sectioned layout matching the reference portal: grouped cards, radio rows,
+   checkbox rows, and an Auto/Manual segmented control that greys out every
+   advanced input without hiding it. */
+.wf-form { display: flex; flex-direction: column; gap: 12px; }
+.wf-group {
+  border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px;
+  background: var(--surface-2);
+}
+.wf-group > h3 {
+  margin: 0 0 10px; font-size: 13px; font-weight: 600; color: var(--text);
+}
+.wf-group > h3:empty { display: none; }
+.wf-advanced-head {
+  display: flex; align-items: center; gap: 10px; padding: 10px 14px;
+}
+.wf-advanced-head > h3 { margin: 0; }
+.wf-hint { font-size: 11px; color: var(--text-3); margin-top: 4px; }
+
+.wf-radios { display: flex; flex-wrap: wrap; gap: 18px; padding-top: 2px; }
+.wf-radio, .wf-check {
+  display: flex; align-items: center; gap: 8px; font-size: 13px;
+  color: var(--text); cursor: pointer;
+}
+.wf-check { padding: 5px 0; }
+.wf-bands { display: flex; flex-wrap: wrap; gap: 18px; }
+.wf-sub { padding-left: 26px; }
+
+/* Auto mode and unsupported options: visible but not editable, so the
+   operator can see the value the gateway is using. */
+.wf-radios.is-off, .wf-check.is-off { opacity: 0.45; cursor: default; }
+.wf-check.is-off, .wf-radios.is-off .wf-radio { cursor: default; }
+
+.wf-info {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 14px; height: 14px; border-radius: 50%; font-size: 10px;
+  font-style: italic; border: 1px solid var(--accent); color: var(--accent);
+  cursor: help; flex: none;
+}
+
+.wf-seg {
+  display: inline-flex; border: 1px solid var(--line); border-radius: 6px;
+  overflow: hidden; flex: none;
+}
+.wf-seg-btn {
+  border: 0; background: var(--surface); color: var(--text-3);
+  padding: 5px 16px; font-size: 12px; cursor: pointer;
+}
+.wf-seg-btn.is-on { background: var(--accent-soft); color: var(--accent); }
+
+.wf-password { position: relative; display: block; }
+.wf-password > input { width: 100%; padding-right: 34px; }
+.wf-eye {
+  position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+  color: var(--text-3);
+}
+
+.wf-notice {
+  font-size: 12px; padding: 8px 12px; border-radius: 6px;
+  background: var(--amber-soft); color: var(--amber); border: 1px solid var(--amber);
+}
+
+/* The form is tall; give it more room than the default dialog. */
+.modal-host .modal:has(.wf-form) { max-width: 620px; }
+
+/* A page being built before it is swapped in: attached so that charts can
+   measure their container, but neither visible nor interactive. Without this
+   the twelve-second auto-refresh blanked the page while it fetched. */
+#root { position: relative; }
+#root > .is-staging {
+  position: absolute; top: 0; left: 0; width: 100%;
+  visibility: hidden; pointer-events: none;
+}
+
+/* Compact read-only table used by the regulatory card to state measured
+   transmit power against the regulatory limit. */
+table.tbl { width: 100%; border-collapse: collapse; }
+table.tbl th, table.tbl td {
+  text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--line);
+}
+table.tbl th { color: var(--text-3); font-weight: 600; }
+table.tbl td.num, table.tbl th.num { text-align: right; font-variant-numeric: tabular-nums; }
+table.tbl tbody tr:last-child td { border-bottom: 0; }

@@ -1,0 +1,51 @@
+#!/bin/sh
+# Make /etc writable with an overlay backed by the data partition.
+#
+# The root filesystem is a read-only SquashFS, which has cost us real bugs:
+# dhclient-script could not write resolv.conf and turned every DHCP lease into
+# a DHCPDECLINE, and nothing that expects to persist a file under /etc works.
+#
+# The lower layer is the image's /etc, the upper layer lives on /data, so
+# changes persist across reboots and a factory reset is "delete the upper dir".
+# If anything here fails the mount is skipped and /etc stays read-only, which
+# is the status quo rather than a broken boot.
+set -u
+
+UPPER=/data/overlay/etc
+WORK=/data/overlay/.etc-work
+
+log() { echo "sbegw-etc-overlay: $*"; }
+
+if ! mountpoint -q /data; then
+    log "/data is not mounted; leaving /etc read-only"
+    exit 0
+fi
+
+case "$(findmnt -no FSTYPE /etc 2>/dev/null)" in
+    overlay) log "/etc is already an overlay"; exit 0 ;;
+esac
+
+# An overlay upper layer must be on a filesystem that supports trusted xattrs;
+# ext4 does. Refuse rather than produce a subtly broken mount.
+if ! mkdir -p "$UPPER" "$WORK" 2>/dev/null; then
+    log "cannot create $UPPER; leaving /etc read-only"
+    exit 0
+fi
+chmod 0755 "$UPPER"
+
+if mount -t overlay overlay \
+        -o "lowerdir=/etc,upperdir=$UPPER,workdir=$WORK" /etc 2>/dev/null; then
+    log "/etc is now writable (upper layer $UPPER)"
+    # Prove it, and back out if the mount is somehow not writable: a
+    # half-working /etc is worse than a read-only one.
+    if : > /etc/.sbegw-writable 2>/dev/null; then
+        rm -f /etc/.sbegw-writable
+        exit 0
+    fi
+    log "the overlay mounted but is not writable; unmounting"
+    umount /etc 2>/dev/null || true
+    exit 0
+fi
+
+log "overlay mount failed; leaving /etc read-only"
+exit 0

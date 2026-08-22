@@ -1,0 +1,16 @@
+[Unit]
+Description=Generate SSH host keys on the writable data partition
+# sshd cannot start without host keys, and it cannot create them on a
+# read-only root, so this must run first.
+Before=ssh.service
+Requires=sbegw-state.service
+After=sbegw-state.service
+ConditionPathExists=!/data/sbegw/ssh/ssh_host_ed25519_key
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/sbegw-gen-hostkeys
+
+[Install]
+WantedBy=multi-user.target

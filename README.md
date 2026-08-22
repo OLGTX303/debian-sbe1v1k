@@ -1,0 +1,81 @@
+# Debian Bookworm on the Askey SBE1V1K (IPQ9574, Wi-Fi 7)
+
+A Debian arm64 userspace and control plane for the Askey SBE1V1K — a Qualcomm
+IPQ9574 board with three ath12k radios (2.4 / 5 / 6 GHz), a 2.5 G port and a
+10 G port. It keeps the board's existing U-Boot and 6.6 kernel and replaces the
+userspace with Debian plus `sbegw`, a gateway control plane.
+
+Built for a personal, non-commercial project. There is no warranty of any kind;
+flashing router firmware can leave a device recoverable only through its U-Boot
+recovery page.
+
+## What works
+
+Verified on hardware, not just in tests:
+
+- **Wi-Fi 7 tri-band concurrent** — 2.4 GHz 40 MHz, 5 GHz up to 240 MHz (a
+  320 MHz EHT span with one 80 MHz block punctured), 6 GHz up to 320 MHz.
+- **MLO** — a real multi-link AP MLD. MLDs are identified by interface name, so
+  every link of an MLD shares one netdev carrying the MLD address, with a radio
+  mask spanning the radios it uses.
+- **Routing** — VLAN-aware bridge, multi-WAN with DHCP/static/PPPoE, nftables
+  firewall with zones, NAT, port forwards, dnsmasq for DHCP/DNS.
+- **AP mode** and **per-SSID WAN bridging** — an SSID's clients can be bridged
+  onto the upstream L2 and addressed by the upstream gateway instead of sitting
+  behind this router's NAT.
+- **Writable root** — the SquashFS root is turned into an overlay whose upper
+  layer lives on the data partition, so `apt install` works and persists.
+- **Fan and status-LED policy** — driven by the board's own device-tree cooling
+  levels and trip points rather than invented numbers.
+- **OTA** — `sbegw --ota-verify` / `--ota-apply`, which validate a sysupgrade
+  image completely before writing anything.
+
+## Layout
+
+```
+gateway/sbegw/     the control plane (Python, no runtime dependencies)
+gateway/web/       the management UI (vanilla JS, no build step)
+gateway/deploy/    systemd units, sysctl drop-ins, the overlay-root init
+gateway/tests/     ~720 assertions, runnable on any Linux host
+scripts/           build the rootfs, install the gateway, pack an image
+doc/               the specification the control plane was written against
+```
+
+## Building
+
+Needs `debootstrap`, `qemu-user-static`, `squashfs-tools` and root:
+
+```bash
+sudo ROOT_PASSWORD='choose-one' bash scripts/build-debian-rootfs.sh
+sudo bash scripts/install-gateway.sh
+sudo bash scripts/pack-debian-squashfs.sh
+sudo bash scripts/make-sysupgrade.sh
+```
+
+The result is a sysupgrade tar the board's recovery page accepts.
+
+Two inputs are **not** in this repository and must be supplied locally:
+
+- **A QSDK build tree** for the matching 6.6 kernel, its modules, the ath12k
+  firmware, and the MLO-capable hostapd (`wpad`). Debian's hostapd 2.10 has no
+  MLD support, so MLO needs the vendor build.
+- **Board firmware** for the radios.
+
+Both are vendor-licensed and are not redistributed here. `scripts/` reads them
+from paths you point at; the build warns and degrades if they are absent.
+
+## Tests
+
+```bash
+cd gateway && for t in tests/smoke_*.py; do python3 "$t"; done
+```
+
+They run without hardware and without root. Where a test asserts a specific
+number — a fan duty, a channel width, an operating class — that number was
+taken from the device tree or measured on the board, and the comment says
+which.
+
+## Licence
+
+Not yet chosen. Until a `LICENSE` file is added, no permission is granted
+beyond reading the code. Open an issue if you want it under something specific.

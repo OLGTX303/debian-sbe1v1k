@@ -1,0 +1,20 @@
+# Allowlist, deliberately. This working directory also holds extracted vendor
+# rootfs dumps, a partial debootstrap backup and multi-hundred-MB build
+# artifacts, none of which may be published. Denying by pattern kept letting
+# those through, so nothing is tracked unless it is named here.
+*
+
+!.gitignore
+!README.md
+!LICENSE
+
+!gateway/
+!gateway/**
+!scripts/
+!scripts/**
+!doc/
+!doc/**
+
+# Build outputs, even under an allowed directory.
+gateway/**/__pycache__/
+gateway/**/*.pyc
