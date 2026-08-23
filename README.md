@@ -66,6 +66,24 @@ if you leave it unset, and everything else is derived:
 QSDK=/path/to/qsdk bash scripts/fetch-sources.sh
 ```
 
+For a private QSDK archive, the same script can download and verify it before
+checking the tree. The archive must extract to a directory containing `qca/`:
+
+```bash
+QSDK=/srv/qsdk \
+QSDK_ARCHIVE='https://private.example/qsdk.tar' \
+QSDK_SHA256='<sha256>' \
+QSDK_STRIP_COMPONENTS=1 \
+MIRROR='https://deb.debian.org/debian' \
+bash scripts/fetch-sources.sh
+```
+
+Credentials for a private URL are supplied through the machine's `curl`
+configuration or environment; they are not stored in this repository. The
+script never downloads Qualcomm sources from GitHub because QSDK is vendor
+licensed. Debian Bookworm is downloaded by `build-debian-rootfs.sh` via
+`MIRROR` and is verified by the normal debootstrap package checks.
+
 ## Building
 
 Needs `debootstrap`, `qemu-user-static`, `squashfs-tools` and root:

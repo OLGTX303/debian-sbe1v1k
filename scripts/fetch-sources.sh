@@ -3,7 +3,8 @@
 #
 # Three kinds of input are needed, and they are not equal:
 #
-#   1. Debian itself — fetched by debootstrap during the build. Nothing to do.
+#   1. Debian itself — fetched by debootstrap during the build. Nothing to do
+#      here; set MIRROR when a local Debian mirror is required.
 #   2. Things with a public canonical source — hostapd, linux-firmware. Fetched
 #      here.
 #   3. Qualcomm's QSDK — the 6.6 kernel and its modules, the ath12k firmware
@@ -33,6 +34,38 @@ fi
 QSDK="${QSDK:-$WS/../qsdk}"
 # fetch-sources works on the tree itself, so QSDK is what it needs.
 QSDK_ROOT="$QSDK"
+DEBIAN_MIRROR="${MIRROR:-http://deb.debian.org/debian}"
+
+download_qsdk() {
+    local archive="$1" destination="$2" tmp expected actual
+    mkdir -p "$destination"
+    if [[ "$archive" == http://* || "$archive" == https://* ]]; then
+        command -v curl >/dev/null || die "curl is required to download QSDK_ARCHIVE"
+        tmp="$(mktemp "${TMPDIR:-/tmp}/sbe1v1k-qsdk.XXXXXX.tar")"
+        trap 'rm -f "$tmp"' RETURN
+        note "downloading private QSDK archive"
+        curl --fail --location --retry 3 --continue-at - "$archive" -o "$tmp"
+        [[ -n "${QSDK_SHA256:-}" ]] || die "set QSDK_SHA256 when downloading QSDK_ARCHIVE"
+        expected="${QSDK_SHA256}  $tmp"
+        actual="$(sha256sum "$tmp")"
+        [[ "$actual" == "$expected" ]] || die "QSDK_SHA256 does not match downloaded archive"
+    else
+        tmp="$archive"
+        [[ -f "$tmp" ]] || die "QSDK archive not found: $tmp"
+        if [[ -n "${QSDK_SHA256:-}" ]]; then
+            expected="${QSDK_SHA256}  $tmp"
+            actual="$(sha256sum "$tmp")"
+            [[ "$actual" == "$expected" ]] || die "QSDK_SHA256 does not match archive"
+        fi
+    fi
+    note "extracting QSDK into $destination"
+    if [[ -n "${QSDK_STRIP_COMPONENTS:-}" ]]; then
+        tar -xf "$tmp" -C "$destination" --strip-components="$QSDK_STRIP_COMPONENTS"
+    else
+        tar -xf "$tmp" -C "$destination"
+    fi
+    [[ -d "$destination/qca" ]] || die "archive extracted, but $destination/qca is missing; set QSDK_STRIP_COMPONENTS correctly"
+}
 
 note() { echo "[*] $*"; }
 warn() { echo "[!] $*" >&2; }
@@ -84,6 +117,13 @@ fi
 
 # ---------------------------------------------------------------- QSDK inputs
 
+# Qualcomm does not publish QSDK through this repository. A private build can
+# provide a local archive or an authenticated URL. URL downloads require
+# QSDK_SHA256 so a changed vendor archive cannot silently change the driver ABI.
+if [[ ! -d "$QSDK_ROOT" && -n "${QSDK_ARCHIVE:-}" ]]; then
+    download_qsdk "$QSDK_ARCHIVE" "$QSDK"
+fi
+
 note "checking the QSDK tree at $QSDK_ROOT"
 if [[ ! -d "$QSDK_ROOT" ]]; then
     cat >&2 <<EOF
@@ -126,6 +166,12 @@ do
 done
 [[ "$found" -gt 0 ]] || die "nothing recognisable in $QSDK_ROOT; is that a QSDK tree?"
 
+if command -v curl >/dev/null && ! curl --fail --silent --show-error --head "$DEBIAN_MIRROR/" >/dev/null; then
+    warn "Debian mirror is not reachable: $DEBIAN_MIRROR"
+else
+    note "Debian mirror: $DEBIAN_MIRROR (used by build-debian-rootfs.sh)"
+fi
+
 if [[ -x "$QSDK_ROOT/build_dir/target-aarch64_cortex-a73+neon-vfpv4_musl/root-ipq95xx/usr/sbin/wpad" ]]; then
     note "  found MLO-capable hostapd (wpad)"
 else
@@ -167,7 +213,7 @@ cat <<EOF
 [*] Ready. Next:
 
       QSDK="$QSDK_ROOT" bash scripts/build-qsdk-gateway-modules.sh
-      sudo QSDK="$QSDK_ROOT" ROOT_PASSWORD='choose-one' bash scripts/build-debian-rootfs.sh
+      sudo QSDK="$QSDK_ROOT" MIRROR="$DEBIAN_MIRROR" ROOT_PASSWORD='choose-one' bash scripts/build-debian-rootfs.sh
       sudo QSDK="$QSDK_ROOT" bash scripts/install-gateway.sh
       sudo bash scripts/pack-debian-squashfs.sh
       sudo bash scripts/make-sysupgrade.sh
