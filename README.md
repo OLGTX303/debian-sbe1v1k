@@ -45,9 +45,12 @@ local administrator there, then sign in to view the live Overview dashboard,
 radio status, clients, ports, WAN state, firewall, telemetry and OTA controls.
 The dashboard is served locally by the router and does not require cloud access.
 
-The live device at `192.168.2.1` currently reports `setup_required: true`; an
-authenticated dashboard screenshot will be added after first-run setup is
-completed on the device.
+Live dashboard captured from the matching SBE1V1K at `192.168.2.1`:
+
+![SBE1V1K live Overview dashboard](doc/dashboard-real.png)
+
+The screenshot is a real device view, not a mockup. Values such as throughput,
+radio state, clients, temperatures and events change as the router runs.
 
 ## Layout
 
