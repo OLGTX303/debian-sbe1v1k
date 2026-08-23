@@ -653,8 +653,11 @@ from sbegw.adapters import nl80211 as _nl  # noqa: E402
 check("the attribute number matches the backports header this driver uses",
       _nl._NL80211_ATTR_VIF_RADIO_MASK == 333)
 _ok, _why = _nl.set_vif_radio_mask("sbegw-no-such-if", 0x1)
+# The contract is "returns False with a reason", not any particular wording.
+# Pinning the kernel's "No such device" passed locally and failed on a CI
+# runner, where the ifindex lookup fails first and reports its own message.
 check("a missing interface fails cleanly rather than raising",
-      _ok is False and "No such device" in _why, _why)
+      _ok is False and isinstance(_why, str) and _why.strip() != "", repr(_why))
 _ok, _why = _nl.set_vif_radio_mask("lo", 0x1)
 check("a non-wireless interface fails cleanly", _ok is False, _why)
 
