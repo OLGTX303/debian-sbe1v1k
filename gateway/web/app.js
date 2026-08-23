@@ -277,7 +277,7 @@ function tableCard(title, headerExtras, table) {
 
 /* ---------------------------------------------------------------- nav model */
 
-/* UniFi Network keeps the application rail short and exposes related screens
+/* The application rail stays short and exposes related screens
  * as contextual tabs.  That makes the common paths one click away without
  * turning the left rail into a 20-item administration tree.  DPI remains a
  * first-class section so it can never disappear below the fold. */
@@ -315,7 +315,7 @@ const NAV = [
     { id: 'platform', name: 'Hardware' },
   ]},
   { id: 'settings', name: 'Settings', ico: 'config', settings: true, items: [
-    { id: 'controller', name: 'UniFi Network' },
+    { id: 'controller', name: 'Controller' },
     { id: 'config', name: 'Configuration' },
     { id: 'users', name: 'Administrators' },
     { id: 'audit', name: 'Audit Log' },
@@ -367,8 +367,8 @@ function renderAuth({ setup }) {
   return h('div', { class: 'auth-wrap' },
     h('div', { class: 'card auth-card' },
       h('div', { class: 'brand' },
-        h('div', { class: 'logo unifi-mark' }, 'U'),
-        h('div', {}, h('div', { class: 'name' }, 'UniFi Network'),
+        h('div', { class: 'logo brand-mark' }, 'S'),
+        h('div', {}, h('div', { class: 'name' }, 'SBE1V1K Gateway'),
           h('div', { class: 'sub' }, 'SBE1V1K Gateway · IPQ9574'))),
       h('div', { class: 'body' },
         h('h2', {}, setup ? 'First-time setup' : 'Sign in'),
@@ -400,9 +400,9 @@ function renderShell() {
   const board = store.dashboard?.system?.board || {};
   const side = h('aside', { class: 'side' },
     h('div', { class: 'brand' },
-      h('div', { class: 'logo unifi-mark' }, 'U'),
+      h('div', { class: 'logo brand-mark' }, 'S'),
       h('div', { style: 'min-width:0' },
-        h('div', { class: 'name' }, 'UniFi Network'),
+        h('div', { class: 'name' }, 'SBE1V1K Gateway'),
         h('div', { class: 'sub' }, 'SBE1V1K · ' + (board.model || 'IPQ9574')))),
     nav,
     h('div', { class: 'side-foot' },

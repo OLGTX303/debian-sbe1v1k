@@ -36,7 +36,7 @@
   --violet-soft: rgba(162, 82, 227, .13);
   --sky: #57a0ff;
 
-  /* light theme (UniFi's default) */
+  /* light theme (the default) */
   --bg: #f1f2f4;
   --surface: #ffffff;
   --surface-2: #f7f8f9;
@@ -610,7 +610,7 @@ table.tbl th { color: var(--text-3); font-weight: 600; }
 table.tbl td.num, table.tbl th.num { text-align: right; font-variant-numeric: tabular-nums; }
 table.tbl tbody tr:last-child td { border-bottom: 0; }
 
-/* ============================================================= UniFi shell
+/* ================================================================ shell
  * Component metrics are transplanted from the supplied UniFi Core portal:
  * Inter typography, 8px surfaces, 40px navigation targets, 36px controls,
  * quiet borders and a two-level primary/context navigation model. */
@@ -642,7 +642,7 @@ body { font: 400 13px/1.5 var(--sans); letter-spacing: -.005em; }
   width: 32px; height: 32px; border-radius: 8px; font-size: 17px;
   font-weight: 700; letter-spacing: -.08em; box-shadow: inset 0 0 0 1px rgba(255,255,255,.18);
 }
-.brand .unifi-mark { font-family: Inter, sans-serif; padding-right: 2px; }
+.brand .brand-mark { font-family: Inter, sans-serif; padding-right: 2px; }
 .brand .name { font-size: 14px; font-weight: 600; letter-spacing: -.01em; }
 .brand .sub { font-size: 11px; margin-top: 2px; color: var(--text-3); }
 
