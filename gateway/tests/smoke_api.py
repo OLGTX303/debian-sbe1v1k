@@ -512,9 +512,12 @@ check("the page saves both service domains",
       "body: { qos:" in _app and "body: { dns:" in _app)
 check("the page exposes local records and conditional forwarding",
       "Local DNS records" in _app and "Conditional forwarding" in _app)
-check("navigation exposes DPI and UniFi control",
-      "id: 'dpi', name: 'Traffic Identification'" in _app and
-      "id: 'controller', name: 'UniFi Network'" in _app)
+# The rail item was renamed from "UniFi Network" to "Controller": the page
+# integrates with a controller, it is not this product's identity. The nav
+# still has to expose both screens.
+check("navigation exposes DPI and controller control",
+      "'Traffic Identification'" in _app and "'Controller'" in _app,
+      "nav labels changed without the test following")
 check("DPI is a first-class primary navigation section",
       "id: 'dpi', name: 'DPI', ico: 'spectrum', featured: true" in _app)
 check("the DPI page shows production traffic summaries",

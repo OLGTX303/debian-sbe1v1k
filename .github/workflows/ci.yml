@@ -1,0 +1,45 @@
+name: tests
+
+# The whole suite runs without hardware, without root and without the vendor
+# tree, which is why it can run here at all. Anything needing the QSDK lives in
+# release.yml on a self-hosted runner.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Shell syntax
+        # These two become PID 1 and an early-boot unit on the device; a typo
+        # in either costs a boot, so they are checked before anything else.
+        run: |
+          for f in scripts/*.sh gateway/deploy/bin/*; do
+            head -1 "$f" | grep -q '^#!.*sh' || continue
+            sh -n "$f" || bash -n "$f"
+          done
+
+      - name: Smoke tests
+        run: |
+          cd gateway
+          fail=0
+          for t in tests/smoke_*.py; do
+            echo "::group::$t"
+            python3 "$t" || fail=1
+            echo "::endgroup::"
+          done
+          exit $fail
+
+      - name: hostapd config keys
+        # Needs the vendor hostapd to cross-check against, so it is advisory
+        # here and authoritative on the self-hosted runner.
+        run: cd gateway && python3 tests/check_hostapd_keys.py || true

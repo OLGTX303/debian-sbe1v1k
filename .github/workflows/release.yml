@@ -1,0 +1,119 @@
+name: release
+
+# Builds a flashable image and publishes it. This CANNOT run on a GitHub-hosted
+# runner: it needs a QSDK tree for the 6.6 kernel modules, the ath12k firmware
+# and the MLO-capable hostapd, none of which are public or redistributable. It
+# therefore runs on a self-hosted runner that has one.
+#
+# Set up once, on the machine holding the QSDK tree:
+#
+#   Settings -> Actions -> Runners -> New self-hosted runner
+#   ./config.sh --url https://github.com/OLGTX303/debian-sbe1v1k --labels sbe1v1k-builder
+#   sudo ./svc.sh install && sudo ./svc.sh start
+#
+# The build needs root (debootstrap, chroot, mkfs), so the runner user needs
+# passwordless sudo for those scripts.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to publish (e.g. v0.2.0)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: [self-hosted, sbe1v1k-builder]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Locate the QSDK tree
+        id: qsdk
+        run: |
+          # Same probe the build scripts use, so CI and a local build agree.
+          QSDK="${QSDK:-}"
+          for c in "$GITHUB_WORKSPACE/../qsdk" "$GITHUB_WORKSPACE/../qsdk14-work-ucgf/qsdk"; do
+            [ -d "$c/qca" ] && QSDK="$(cd "$c" && pwd)" && break
+          done
+          [ -n "$QSDK" ] || { echo "::error::no QSDK tree found; see scripts/fetch-sources.sh"; exit 1; }
+          echo "qsdk=$QSDK" >> "$GITHUB_OUTPUT"
+          echo "using $QSDK"
+
+      - name: Tests
+        run: |
+          cd gateway
+          for t in tests/smoke_*.py; do python3 "$t"; done
+          python3 tests/check_hostapd_keys.py
+
+      - name: Build
+        env:
+          QSDK: ${{ steps.qsdk.outputs.qsdk }}
+          ROOT_PASSWORD: ${{ secrets.ROOT_PASSWORD }}
+        run: |
+          # ROOT_PASSWORD comes from a repository secret so the published image
+          # does not ship the documented default. The build fails loudly rather
+          # than silently producing a locked root.
+          [ -n "$ROOT_PASSWORD" ] || { echo "::error::set the ROOT_PASSWORD secret"; exit 1; }
+          sudo -E bash scripts/build-debian-rootfs.sh
+          sudo -E bash scripts/install-gateway.sh
+          sudo bash scripts/pack-debian-squashfs.sh
+          sudo bash scripts/make-sysupgrade.sh
+
+      - name: Verify the image before publishing it
+        id: image
+        run: |
+          IMG="$(ls -1t debian-bookworm-sbe1v1k-sysupgrade-*.bin | head -1)"
+          [ -n "$IMG" ] || { echo "::error::no image produced"; exit 1; }
+          # The same validation the on-device updater runs, so a broken image is
+          # caught here rather than on someone's router.
+          cd gateway && python3 -c "
+          import sys; sys.path.insert(0, '.')
+          from sbegw.otad import FirmwareUpdater
+          r = FirmwareUpdater().inspect('../$IMG')
+          print('board  :', r['board'])
+          print('sha256 :', r['sha256'])
+          for p, e in sorted(r['payloads'].items()):
+              print(f'{p:7}: {e[\"size\"]} bytes')
+          # Partition checks only mean something on the device, so ignore those.
+          fatal = [p for p in r['problems'] if 'partition' not in p and 'no partition' not in p]
+          if fatal:
+              print('REFUSED:', fatal); sys.exit(1)
+          " || exit 1
+          echo "img=$IMG" >> "$GITHUB_OUTPUT"
+          echo "sha=$(sha256sum "$IMG" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          IMG='${{ steps.image.outputs.img }}'
+          cat > /tmp/notes.md <<NOTES
+          Automated build of \`$TAG\`.
+
+          \`\`\`
+          file    $IMG
+          sha256  ${{ steps.image.outputs.sha }}
+          board   askey_sbe1v1k
+          \`\`\`
+
+          Flash through the board's U-Boot recovery page, or from a running unit:
+
+          \`\`\`sh
+          sbegw --ota-verify /data/sbegw/$IMG
+          sbegw --ota-apply  /data/sbegw/$IMG --ota-reboot
+          \`\`\`
+
+          This board has a single kernel/rootfs bank, so an interrupted write is
+          recoverable only through the recovery page. The OTA path validates the
+          whole image before writing and verifies each write by reading it back.
+
+          Contains Qualcomm-licensed ath12k firmware and hostapd, and a Debian
+          Bookworm userland. All rights remain with their respective owners.
+          NOTES
+          gh release create "$TAG" "$IMG" --title "$TAG" --notes-file /tmp/notes.md \
+            || gh release upload "$TAG" "$IMG" --clobber
