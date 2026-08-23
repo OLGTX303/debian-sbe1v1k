@@ -92,10 +92,20 @@ for package in kmod-sched-core kmod-sched-cake kmod-ifb \
     # working image, just without hardware offload. Skip rather than die.
     case "$package" in
         kmod-qca-nss-ppe-*)
-            [[ -d "$package_root/$package/lib/modules" ]] || {
-                echo "[!] $package not built; skipping" >&2
+            # These come from a feed package, whose ipkg payload lands under its
+            # own build dir rather than the kernel target's packages/ tree. Its
+            # `install` target also fails on this QSDK at the ipkg-packaging
+            # step, so take the .ko straight from the payload dir.
+            _ae="$(echo "$QSDK/build_dir/target-aarch64_cortex-a73+neon-vfpv4_musl"/linux-ipq95xx_generic/qca-nss-ae-clients-*/ipkg-aarch64_cortex-a73_neon-vfpv4)"
+            if [[ -d "$_ae/$package/lib/modules" ]]; then
+                package_modules="$_ae/$package/lib/modules"
+                find "$package_modules" -name '*.ko' -exec \
+                    cp -a {} "$kernel_release_dir/" \; 
+                note "installed $package from the feed payload dir"
                 continue
-            }
+            fi
+            echo "[!] $package not built; hardware offload unavailable" >&2
+            continue
             ;;
     esac
     package_modules="$package_root/$package/lib/modules"
