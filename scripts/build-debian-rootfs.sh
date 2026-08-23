@@ -207,6 +207,31 @@ install -d "$ROOTFS/lib/firmware/internal"
 cp -a --no-preserve=ownership "$QSDK_INI"/. "$ROOTFS/lib/firmware/"
 find "$ROOTFS/lib/modules/$KERNEL_RELEASE" -type f -name '*.ko' -exec strip --strip-debug {} + 2>/dev/null || true
 
+# OpenWrt's installed module tree ships a FLATTENED modules.builtin: every line
+# is a bare filename ("8021q.ko") instead of a path ("kernel/net/8021q/8021q.ko").
+# kmod rejects those lines, so depmod aborts, no modules.dep is produced, and
+# modprobe then fails for EVERY module by name -- silently, since anything using
+# modprobe just does nothing. Take the well-formed file from the kernel build and
+# generate the dep data here, so modprobe works in the image.
+_kbuild="$QSDK/build_dir/target-aarch64_cortex-a73+neon-vfpv4_musl/linux-ipq95xx_generic/linux-6.6.116"
+if [[ -f "$_kbuild/modules.builtin" ]]; then
+    cp -a --no-preserve=ownership "$_kbuild/modules.builtin" \
+        "$ROOTFS/lib/modules/$KERNEL_RELEASE/modules.builtin"
+    [[ -f "$_kbuild/modules.order" ]] && cp -a --no-preserve=ownership \
+        "$_kbuild/modules.order" "$ROOTFS/lib/modules/$KERNEL_RELEASE/modules.order"
+else
+    # Without the kernel build tree, drop the malformed lines rather than leave a
+    # file that makes depmod abort outright.
+    sed -i -n '/\//p' "$ROOTFS/lib/modules/$KERNEL_RELEASE/modules.builtin" 2>/dev/null || true
+fi
+if depmod -b "$ROOTFS" "$KERNEL_RELEASE" 2>&1 | grep -q "ERROR"; then
+    die "depmod failed for $KERNEL_RELEASE; modprobe would be broken in the image"
+fi
+[[ -s "$ROOTFS/lib/modules/$KERNEL_RELEASE/modules.dep" ]] \
+    || die "depmod produced no modules.dep; modprobe would be broken in the image"
+grep -q "qca-nss-ppe-bridge-mgr" "$ROOTFS/lib/modules/$KERNEL_RELEASE/modules.dep" \
+    || echo "[!] PPE bridge-mgr not in the module tree; hardware offload unavailable" >&2
+
 cat > "$ROOTFS/etc/modules-load.d/sbe1v1k-qca.conf" <<'EOF'
 cfg80211
 mac80211
@@ -224,6 +249,8 @@ qca-nss-ppe-vp
 qca-nss-sfe
 qca-nss-phy
 qca-ssdk
+qca-nss-ppe-vlan
+qca-nss-ppe-bridge-mgr
 ecm
 EOF
 
@@ -430,7 +457,8 @@ LOG=/run/sbe1v1k-driver-load.log
 : > "$LOG"
 for mod in cfg80211 mac80211 ath ath_debug mdio-ipq4019 mdio-ahb ath12k ath12k_wifi6 ath12k_wifi7 \
     ath12k_wifi8 qca8084-phy qca8k-cc qca-ssdk qca-nss-ppe qca-nss-ppe-rule \
-    qca-nss-ppe-netlink qca-nss-ppe-vp qca-nss-dp qca-nss-sfe qca-nss-phy ecm; do
+    qca-nss-ppe-netlink qca-nss-ppe-vp qca-nss-dp qca-nss-sfe qca-nss-phy \
+    qca-nss-ppe-vlan qca-nss-ppe-bridge-mgr ecm; do
     if modprobe "$mod" >>"$LOG" 2>&1; then
         echo "loaded $mod" >>"$LOG"
     else
@@ -674,7 +702,8 @@ done
 
 # pwm-fan and the thermal cooling maps are in the DTS; fan speed is automatic.
 for mod in mdio-ipq4019 mdio-ahb ath12k ath12k_wifi7 qca-nss-dp qca-nss-ppe qca-nss-ppe-rule \
-    qca-nss-ppe-netlink qca-nss-ppe-vp qca-nss-sfe qca-nss-phy qca-ssdk ecm; do
+    qca-nss-ppe-netlink qca-nss-ppe-vp qca-nss-sfe qca-nss-phy qca-ssdk \
+    qca-nss-ppe-vlan qca-nss-ppe-bridge-mgr ecm; do
     modprobe "$mod" 2>/dev/null || true
 done
 exit 0
