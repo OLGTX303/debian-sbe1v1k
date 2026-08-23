@@ -79,6 +79,12 @@ sudo bash scripts/make-sysupgrade.sh
 
 The result is a sysupgrade tar the board's recovery page accepts.
 
+Pushing a version tag such as `v0.2.0`, or starting the `release` workflow
+manually with a tag, builds the image on the configured private QSDK runner and
+publishes it as the GitHub release asset `sysupgrade.bin`. The release image
+includes the locally supplied Qualcomm/QSDK ath12k, NSS/PPE and hostapd driver
+components; those vendor binaries are intentionally not stored in this repo.
+
 Two inputs are **not** in this repository and must be supplied locally:
 
 - **A QSDK build tree** for the matching 6.6 kernel, its modules, the ath12k

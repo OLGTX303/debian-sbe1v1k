@@ -58,6 +58,10 @@ jobs:
           # does not ship the documented default. The build fails loudly rather
           # than silently producing a locked root.
           [ -n "$ROOT_PASSWORD" ] || { echo "::error::set the ROOT_PASSWORD secret"; exit 1; }
+          # Build the QSDK 6.6 driver modules before copying them into Debian.
+          # This includes ath12k/NSS/PPE dependencies already present in the
+          # tree plus the Smart Queue modules used by sbegw.
+          QSDK="$QSDK" bash scripts/build-qsdk-gateway-modules.sh
           sudo -E bash scripts/build-debian-rootfs.sh
           sudo -E bash scripts/install-gateway.sh
           sudo bash scripts/pack-debian-squashfs.sh
@@ -92,6 +96,7 @@ jobs:
           TAG: ${{ github.event.inputs.tag || github.ref_name }}
         run: |
           IMG='${{ steps.image.outputs.img }}'
+          cp "$IMG" sysupgrade.bin
           cat > /tmp/notes.md <<NOTES
           Automated build of \`$TAG\`.
 
@@ -115,5 +120,8 @@ jobs:
           Contains Qualcomm-licensed ath12k firmware and hostapd, and a Debian
           Bookworm userland. All rights remain with their respective owners.
           NOTES
-          gh release create "$TAG" "$IMG" --title "$TAG" --notes-file /tmp/notes.md \
-            || gh release upload "$TAG" "$IMG" --clobber
+          # Keep the stable download name requested by the recovery workflow;
+          # the content-addressed build name remains in the release notes.
+          gh release view "$TAG" >/dev/null 2>&1 || \
+            gh release create "$TAG" --title "$TAG" --notes-file /tmp/notes.md
+          gh release upload "$TAG" sysupgrade.bin#sysupgrade.bin --clobber
