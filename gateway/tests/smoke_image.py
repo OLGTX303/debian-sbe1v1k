@@ -202,6 +202,19 @@ check("ca-certificates is installed, so https works",
 check("sources.list covers main, updates and security",
       all(s in rootfs_build for s in ("bookworm main", "bookworm-updates",
                                       "bookworm-security")))
+check("Suricata DPI is installed from Bookworm Backports",
+      "bookworm-backports" in rootfs_build
+      and re.search(r"apt-get install .*bookworm-backports.*suricata", rootfs_build)
+      is not None)
+check("the stock Suricata unit is masked because sbegw owns DPI",
+      'etc/systemd/system/suricata.service' in installer
+      and 'multi-user.target.wants/suricata.service' in installer)
+check("the supplied UniFi portal fonts are transplanted into the gateway UI",
+      "unifi-portal/dist/local" in installer and "PORTAL_UI/fonts" in installer
+      and "Inter-Regular" in installer)
+check("the supplied UniFi favicon assets are transplanted too",
+      all(asset in installer for asset in ("favicon.svg", "favicon.ico",
+                                            "apple-touch-icon.png")))
 
 print("\n--- root must be able to log in ---")
 # The chroot runs `passwd -l root`, which leaves "!" in front of the hash. The

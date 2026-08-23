@@ -11,7 +11,7 @@ import ipaddress
 import re
 from typing import Any
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 MAC_RE = re.compile(r"^[0-9a-f]{2}(:[0-9a-f]{2}){5}$")
 NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 ._()/+-]{0,62}$")
@@ -176,7 +176,27 @@ def default_config() -> dict[str, Any]:
             "filtering": {"enabled": False, "block_malware": True, "block_ads": False,
                           "allowlist": [], "blocklist": []},
             "records": [],
+            "conditional_forwarders": [],
             "query_log": False,
+        },
+        "dpi": {
+            "enabled": False,
+            "engine": "suricata",
+            "retention_hours": 24,
+            "include_ipv6": True,
+        },
+        "controller": {
+            "enabled": False,
+            "inform_url": "",
+            "discovery": True,
+            # Pull desired state from the controller's documented local API.
+            # The key is redacted by every ordinary API/config view.
+            "sync_enabled": False,
+            "api_url": "",
+            "api_key": "",
+            "site_id": "",
+            "verify_tls": True,
+            "interval_seconds": 10,
         },
         "services": {
             "mdns": {"enabled": False, "networks": []},
@@ -355,6 +375,10 @@ def validate(cfg: dict[str, Any], *, capabilities: dict[str, Any] | None = None)
     _validate_firewall(cfg.setdefault("firewall", {}), cfg)
     _validate_nat(cfg.setdefault("nat", {}), cfg)
     _validate_routing(cfg.setdefault("routing", {}))
+    _validate_qos(cfg.setdefault("qos", {}), cfg)
+    _validate_dns(cfg.setdefault("dns", {}))
+    warnings += _validate_dpi(cfg.setdefault("dpi", {}), cfg)
+    _validate_controller(cfg.setdefault("controller", {}))
     warnings += _validate_wifi(cfg.setdefault("wifi", {}), cfg, caps)
     _validate_users(cfg.setdefault("users", {}))
     return warnings
@@ -715,6 +739,172 @@ def _validate_routing(routing: dict[str, Any]) -> None:
         elif kind == "interface" and not route.get("interface"):
             raise ValidationError(f"{base}.interface", "required for interface routes")
         v_int(route.setdefault("metric", 100), f"{base}.metric", 0, 4294967295)
+
+
+def _validate_qos(qos: dict[str, Any], cfg: dict[str, Any]) -> None:
+    """Validate the global smart-queue policy.
+
+    UCGF keeps separate ``qos`` and ``qos-ip`` domains.  sbegw deliberately
+    presents one small policy: CAKE on each enabled WAN, with optional per-host
+    limits retained in the document for the client manager.
+    """
+    _need(qos, "qos", dict, "an object")
+    enabled = v_bool(qos.setdefault("enabled", False), "qos.enabled")
+    v_enum(qos.setdefault("engine", "cake"), "qos.engine", ("cake",))
+    down = v_int(qos.setdefault("download_kbps", 0), "qos.download_kbps",
+                 0, 10_000_000)
+    up = v_int(qos.setdefault("upload_kbps", 0), "qos.upload_kbps",
+               0, 10_000_000)
+    if enabled and not (down or up):
+        raise ValidationError(
+            "qos", "set a download or upload rate before enabling Smart Queues")
+
+    limits = qos.setdefault("per_client_limits", [])
+    _need(limits, "qos.per_client_limits", list, "a list")
+    seen: set[str] = set()
+    network_ids = set(cfg.get("networks", {}))
+    for i, limit in enumerate(limits):
+        base = f"qos.per_client_limits[{i}]"
+        _need(limit, base, dict, "an object")
+        if limit.get("mac"):
+            key = "mac:" + v_mac(limit["mac"], f"{base}.mac")
+        elif limit.get("network"):
+            network = limit["network"]
+            if network not in network_ids:
+                raise ValidationError(f"{base}.network", f"unknown network '{network}'")
+            key = "network:" + network
+        else:
+            raise ValidationError(base, "a mac or network is required")
+        if key in seen:
+            raise ValidationError(base, f"duplicate limit for {key.split(':', 1)[1]}")
+        seen.add(key)
+        v_int(limit.setdefault("download_kbps", 0), f"{base}.download_kbps",
+              0, 10_000_000)
+        v_int(limit.setdefault("upload_kbps", 0), f"{base}.upload_kbps",
+              0, 10_000_000)
+
+
+_DOMAIN_RE = re.compile(
+    r"^(?=.{1,253}\.?$)(?:[A-Za-z0-9_](?:[A-Za-z0-9_-]{0,61}"
+    r"[A-Za-z0-9_])?\.)*[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.?$")
+
+
+def _domain(value: Any, path: str) -> str:
+    _need(value, path, str, "a DNS name")
+    name = value.strip().lower().rstrip(".")
+    if not _DOMAIN_RE.match(name):
+        raise ValidationError(path, "invalid DNS name")
+    return name
+
+
+def _validate_dns(dns: dict[str, Any]) -> None:
+    """Validate dnsmasq forwarding, local records and domain filtering."""
+    _need(dns, "dns", dict, "an object")
+    upstream = dns.setdefault("upstream", ["1.1.1.1", "8.8.8.8"])
+    _need(upstream, "dns.upstream", list, "a list of resolver addresses")
+    if not upstream:
+        raise ValidationError("dns.upstream", "at least one resolver is required")
+    for i, address in enumerate(upstream):
+        v_ip(address, f"dns.upstream[{i}]")
+    v_int(dns.setdefault("cache_size", 4096), "dns.cache_size", 0, 100_000)
+    v_bool(dns.setdefault("dnssec", False), "dns.dnssec")
+    v_bool(dns.setdefault("query_log", False), "dns.query_log")
+
+    filtering = dns.setdefault("filtering", {})
+    _need(filtering, "dns.filtering", dict, "an object")
+    v_bool(filtering.setdefault("enabled", False), "dns.filtering.enabled")
+    v_bool(filtering.setdefault("block_malware", True),
+           "dns.filtering.block_malware")
+    v_bool(filtering.setdefault("block_ads", False), "dns.filtering.block_ads")
+    for key in ("allowlist", "blocklist"):
+        names = filtering.setdefault(key, [])
+        _need(names, f"dns.filtering.{key}", list, "a list of DNS names")
+        normalised = [_domain(name, f"dns.filtering.{key}[{i}]")
+                      for i, name in enumerate(names)]
+        if len(normalised) != len(set(normalised)):
+            raise ValidationError(f"dns.filtering.{key}", "contains a duplicate name")
+        filtering[key] = normalised
+
+    forwarders = dns.setdefault("conditional_forwarders", [])
+    _need(forwarders, "dns.conditional_forwarders", list, "a list")
+    for i, entry in enumerate(forwarders):
+        base = f"dns.conditional_forwarders[{i}]"
+        _need(entry, base, dict, "an object")
+        entry["domain"] = _domain(entry.get("domain"), f"{base}.domain")
+        entry["server"] = v_ip(entry.get("server"), f"{base}.server")
+
+    records = dns.setdefault("records", [])
+    _need(records, "dns.records", list, "a list")
+    seen_records: set[tuple[str, str]] = set()
+    for i, record in enumerate(records):
+        base = f"dns.records[{i}]"
+        _need(record, base, dict, "an object")
+        kind = v_enum(record.setdefault("type", "A"), f"{base}.type",
+                      ("A", "AAAA", "CNAME", "SRV", "TXT"))
+        record["name"] = _domain(record.get("name"), f"{base}.name")
+        value = record.get("value")
+        _need(value, f"{base}.value", str, "a string")
+        if "\n" in value or "\r" in value:
+            raise ValidationError(f"{base}.value", "must be a single line")
+        if kind == "A":
+            record["value"] = v_ip(value, f"{base}.value", 4)
+        elif kind == "AAAA":
+            record["value"] = v_ip(value, f"{base}.value", 6)
+        elif kind == "CNAME":
+            record["value"] = _domain(value, f"{base}.value")
+        elif not value.strip() or len(value) > 255:
+            raise ValidationError(f"{base}.value", "must be 1-255 characters")
+        key = (kind, record["name"])
+        if key in seen_records:
+            raise ValidationError(base, f"duplicate {kind} record for {record['name']}")
+        seen_records.add(key)
+
+
+def _validate_dpi(dpi: dict[str, Any], cfg: dict[str, Any]) -> list[str]:
+    _need(dpi, "dpi", dict, "an object")
+    enabled = v_bool(dpi.setdefault("enabled", False), "dpi.enabled")
+    v_enum(dpi.setdefault("engine", "suricata"), "dpi.engine", ("suricata",))
+    v_int(dpi.setdefault("retention_hours", 24), "dpi.retention_hours", 1, 720)
+    v_bool(dpi.setdefault("include_ipv6", True), "dpi.include_ipv6")
+    if enabled and cfg.get("firewall", {}).get("hardware_offload"):
+        return ["dpi: hardware flow offload can bypass packet inspection; "
+                "disable offload for complete traffic identification"]
+    return []
+
+
+def _validate_controller(controller: dict[str, Any]) -> None:
+    _need(controller, "controller", dict, "an object")
+    enabled = v_bool(controller.setdefault("enabled", False), "controller.enabled")
+    v_bool(controller.setdefault("discovery", True), "controller.discovery")
+    sync = v_bool(controller.setdefault("sync_enabled", False),
+                  "controller.sync_enabled")
+    v_bool(controller.setdefault("verify_tls", True), "controller.verify_tls")
+    v_int(controller.setdefault("interval_seconds", 10),
+          "controller.interval_seconds", 5, 300)
+
+    for key in ("inform_url", "api_url", "api_key", "site_id"):
+        value = controller.setdefault(key, "")
+        _need(value, f"controller.{key}", str, "a string")
+        if "\n" in value or "\r" in value or len(value) > 2048:
+            raise ValidationError(f"controller.{key}", "invalid value")
+
+    inform = controller["inform_url"].strip()
+    if enabled:
+        if not re.match(r"^https?://[^\s/]+(?::[0-9]{1,5})?/inform/?$", inform):
+            raise ValidationError("controller.inform_url",
+                                  "use http(s)://controller:8080/inform")
+        controller["inform_url"] = inform.rstrip("/")
+    if sync:
+        api_url = controller["api_url"].strip().rstrip("/")
+        if not re.match(r"^https?://[^\s]+/proxy/network/integration/v1$", api_url):
+            raise ValidationError(
+                "controller.api_url",
+                "must end with /proxy/network/integration/v1")
+        if not controller["api_key"].strip():
+            raise ValidationError("controller.api_key", "an API key is required")
+        if not re.match(r"^[0-9a-fA-F-]{16,64}$", controller["site_id"].strip()):
+            raise ValidationError("controller.site_id", "invalid site ID")
+        controller["api_url"] = api_url
 
 
 def _validate_users(users: dict[str, Any]) -> None:

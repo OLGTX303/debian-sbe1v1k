@@ -29,8 +29,8 @@ from typing import Any
 
 from .adapters import ethtool, nft, rtnl
 from .configd import ApplyResult
-from .util import (ToolError, monotonic, now, rate, read_text, run, run_ok,
-                   which, write_atomic)
+from .util import (ToolError, monotonic, now, rate, read_text, run, run_json,
+                   run_ok, which, write_atomic)
 
 log = logging.getLogger("sbegw.netd")
 
@@ -1173,6 +1173,153 @@ class ServiceManager:
         return entries
 
 
+class TrafficManager:
+    """Apply UCGF-style Smart Queues with Linux CAKE.
+
+    Egress shaping attaches directly to each WAN.  Download shaping redirects
+    WAN ingress to one private IFB per WAN, because an ingress qdisc cannot pace
+    packets itself.  The names and handles are owned by sbegw and are stable, so
+    disabling the feature removes only qdiscs created by this manager.
+    """
+
+    IFB_PREFIX = "ifb-sbegw"
+    ROOT_HANDLE = "1:"
+
+    def __init__(self, wans: WanManager, events=None):
+        self.wans = wans
+        self.events = events
+        self.last_error: str | None = None
+
+    @classmethod
+    def _ifb(cls, index: int) -> str:
+        # Linux interface names are limited to 15 characters including NUL.
+        return f"{cls.IFB_PREFIX}{index}"
+
+    @staticmethod
+    def _qdiscs(interface: str) -> list[dict[str, Any]]:
+        return run_json(["tc", "-j", "qdisc", "show", "dev", interface],
+                        default=[]) or []
+
+    @classmethod
+    def _has_owned_cake(cls, interface: str) -> bool:
+        return any(q.get("kind") == "cake" and
+                   q.get("handle") == cls.ROOT_HANDLE
+                   for q in cls._qdiscs(interface))
+
+    @classmethod
+    def _cleanup(cls, interface: str, ifb: str) -> None:
+        # The private IFB and explicit root handle are ownership markers.  Do
+        # not disturb administrator-created CAKE or ingress policies.
+        owned_ifb = os.path.exists(f"/sys/class/net/{ifb}")
+        if cls._has_owned_cake(interface):
+            run_ok(["tc", "qdisc", "del", "dev", interface, "root"])
+        qdiscs = cls._qdiscs(interface) if owned_ifb else []
+        if any(q.get("kind") == "ingress" and q.get("handle") == "ffff:"
+               for q in qdiscs):
+            run_ok(["tc", "qdisc", "del", "dev", interface, "ingress"])
+        if owned_ifb:
+            if cls._has_owned_cake(ifb):
+                run_ok(["tc", "qdisc", "del", "dev", ifb, "root"])
+            run_ok(["ip", "link", "del", "dev", ifb])
+
+    def apply(self, cfg: dict[str, Any]) -> list[str]:
+        qos = cfg.get("qos", {})
+        requested = bool(qos.get("enabled"))
+        enabled = requested and not ap_mode(cfg)
+        wan_items = [(wid, wan) for wid, wan in sorted(cfg.get("wans", {}).items())
+                     if wan.get("enabled", True) and wan.get("mode") != "disabled"]
+        messages: list[str] = []
+
+        if which("tc") is None:
+            self.last_error = "tc is not installed" if requested else None
+            return (["Smart Queues unavailable: iproute2 tc is not installed"]
+                    if requested else [])
+
+        # Always clean the interfaces in the current config first.  `replace`
+        # alone cannot remove a previously configured download IFB when the new
+        # policy shapes uploads only.
+        for index, (_wid, wan) in enumerate(wan_items):
+            self._cleanup(self.wans.interface_for(wan, cfg), self._ifb(index))
+
+        if not enabled:
+            self.last_error = None
+            if requested and ap_mode(cfg):
+                return ["Smart Queues are bypassed in AP mode"]
+            return []
+
+        if not wan_items:
+            self.last_error = "no enabled WAN is configured"
+            return [f"Smart Queues unavailable: {self.last_error}"]
+
+        down = int(qos.get("download_kbps") or 0)
+        up = int(qos.get("upload_kbps") or 0)
+        failures: list[str] = []
+        for index, (wid, wan) in enumerate(wan_items):
+            interface = self.wans.interface_for(wan, cfg)
+            ifb = self._ifb(index)
+            try:
+                if up:
+                    run(["tc", "qdisc", "replace", "dev", interface, "root",
+                         "handle", self.ROOT_HANDLE, "cake", "bandwidth",
+                         f"{up}kbit", "diffserv4", "nat", "dual-srchost",
+                         "ack-filter"])
+                if down:
+                    if not os.path.exists(f"/sys/class/net/{ifb}"):
+                        run(["ip", "link", "add", ifb, "type", "ifb"])
+                    run(["ip", "link", "set", "dev", ifb, "up"])
+                    run(["tc", "qdisc", "replace", "dev", interface,
+                         "handle", "ffff:", "ingress"])
+                    run(["tc", "filter", "replace", "dev", interface,
+                         "parent", "ffff:", "protocol", "all", "matchall",
+                         "action", "mirred", "egress", "redirect", "dev", ifb])
+                    run(["tc", "qdisc", "replace", "dev", ifb, "root",
+                         "handle", self.ROOT_HANDLE, "cake", "bandwidth",
+                         f"{down}kbit", "diffserv4", "nat", "wash",
+                         "dual-dsthost", "ingress"])
+                directions = "/".join(x for x, rate in
+                                      (("download", down), ("upload", up)) if rate)
+                messages.append(f"Smart Queues enabled on {wid} ({directions})")
+            except (ToolError, OSError, subprocess.TimeoutExpired) as exc:
+                self._cleanup(interface, ifb)
+                failures.append(f"{wid}: {exc}")
+
+        self.last_error = "; ".join(failures) or None
+        if failures:
+            detail = "Smart Queues failed: " + self.last_error
+            messages.append(detail)
+            if self.events:
+                self.events.emit("QOS_FAILED", "error", {"detail": self.last_error},
+                                 subsystem="qos", message=detail)
+        return messages
+
+    def status(self, cfg: dict[str, Any]) -> dict[str, Any]:
+        qos = cfg.get("qos", {})
+        interfaces = []
+        wan_items = [(wid, wan) for wid, wan in sorted(cfg.get("wans", {}).items())
+                     if wan.get("enabled", True) and wan.get("mode") != "disabled"]
+        for index, (wid, wan) in enumerate(wan_items):
+            interface = self.wans.interface_for(wan, cfg)
+            ifb = self._ifb(index)
+            interfaces.append({
+                "wan": wid,
+                "interface": interface,
+                "upload_active": (self._has_owned_cake(interface)
+                                  if which("tc") else False),
+                "download_active": (os.path.exists(f"/sys/class/net/{ifb}")
+                                    and self._has_owned_cake(ifb))
+                                   if which("tc") else False,
+            })
+        return {
+            "requested": bool(qos.get("enabled")),
+            "effective": bool(qos.get("enabled")) and not ap_mode(cfg)
+                         and any(i["upload_active"] or i["download_active"]
+                                 for i in interfaces),
+            "tool_available": which("tc") is not None,
+            "interfaces": interfaces,
+            "error": self.last_error,
+        }
+
+
 class NetDaemon:
     """Coordinates the managers and acts as configd's network applier."""
 
@@ -1182,6 +1329,7 @@ class NetDaemon:
         self.networks = NetworkManager(events)
         self.wans = WanManager(events)
         self.services = ServiceManager(events)
+        self.traffic = TrafficManager(self.wans, events)
 
     # configd calls this before anything is applied.
     def preflight(self, old: dict[str, Any],
@@ -1233,6 +1381,7 @@ class NetDaemon:
         # These are reported but must not roll back a working bridge.
         stage("wans", self.wans.apply, new)
         stage("dhcp/dns", self.services.apply, new)
+        stage("smart queues", self.traffic.apply, new)
         stage("routing", self.apply_routing, new)
 
         try:
@@ -1250,7 +1399,7 @@ class NetDaemon:
 
     @staticmethod
     def _is_risky(old: dict[str, Any], new: dict[str, Any]) -> bool:
-        for key in ("ports", "networks", "firewall", "wans"):
+        for key in ("ports", "networks", "firewall", "wans", "dns", "qos"):
             if old.get(key) != new.get(key):
                 return True
         return False

@@ -146,6 +146,7 @@ const ICON_PATHS = {
   port: 'M4 8h16v8H4V8Zm3 8v3m4-3v3m4-3v3M7 8V5m10 3V5',
   wan: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Zm-9-9h18M12 3c2.5 2.4 4 5.6 4 9s-1.5 6.6-4 9c-2.5-2.4-4-5.6-4-9s1.5-6.6 4-9Z',
   vlan: 'M4 5h16M4 12h16M4 19h16M8 5v14m8-14v14',
+  services: 'M4 7h10m4 0h2M4 17h2m4 0h10M14 4v6m-8 4v6',
   radio: 'M12 14a2 2 0 1 0 0-4 2 2 0 0 0 0 4Zm4.5-6.5a6 6 0 0 1 0 9M7.5 16.5a6 6 0 0 1 0-9M20 4a11 11 0 0 1 0 16M4 20A11 11 0 0 1 4 4',
   ssid: 'M5 12.5a10 10 0 0 1 14 0M8 16a6 6 0 0 1 8 0M12 20h.01M2 9a15 15 0 0 1 20 0',
   mlo: 'M8 7h9a4 4 0 0 1 0 8h-1M7 17H6a4 4 0 0 1 0-8h1m9 12 3-3-3-3M8 4 5 7l3 3',
@@ -276,44 +277,57 @@ function tableCard(title, headerExtras, table) {
 
 /* ---------------------------------------------------------------- nav model */
 
+/* UniFi Network keeps the application rail short and exposes related screens
+ * as contextual tabs.  That makes the common paths one click away without
+ * turning the left rail into a 20-item administration tree.  DPI remains a
+ * first-class section so it can never disappear below the fold. */
 const NAV = [
-  { label: null, items: [
-    { id: 'dashboard', name: 'Dashboard', ico: 'dashboard' },
-    { id: 'topology', name: 'Topology', ico: 'topology' },
-    { id: 'clients', name: 'Clients', ico: 'clients' },
+  { id: 'dashboard', name: 'Overview', ico: 'dashboard', items: [
+    { id: 'dashboard', name: 'Overview' },
   ]},
-  { label: 'Network', items: [
-    { id: 'ports', name: 'Ports', ico: 'port' },
-    { id: 'wan', name: 'WAN', ico: 'wan' },
-    { id: 'networks', name: 'Networks / VLANs', ico: 'vlan' },
+  { id: 'internet', name: 'Internet', ico: 'internet', items: [
+    { id: 'wan', name: 'Internet' },
+    { id: 'ports', name: 'Ports' },
+    { id: 'services', name: 'Traffic & DNS' },
+    { id: 'routes', name: 'Routes' },
+    { id: 'nat', name: 'NAT' },
   ]},
-  { label: 'Wi-Fi', items: [
-    { id: 'radios', name: 'Radios', ico: 'radio' },
-    { id: 'ssids', name: 'Wireless Networks', ico: 'ssid' },
-    { id: 'channels', name: 'Channel Analyzer', ico: 'spectrum' },
-    { id: 'wclients', name: 'Wi-Fi Clients', ico: 'device' },
+  { id: 'networks', name: 'Networks', ico: 'vlan', items: [
+    { id: 'networks', name: 'Networks' },
+    { id: 'ssids', name: 'WiFi' },
+    { id: 'radios', name: 'Radios' },
+    { id: 'channels', name: 'Environment' },
+    { id: 'neighbors', name: 'Neighbour APs' },
   ]},
-  { label: 'Security', items: [
-    { id: 'firewall', name: 'Firewall', ico: 'shield' },
-    { id: 'nat', name: 'NAT', ico: 'nat' },
-    { id: 'neighbors', name: 'Neighbour APs', ico: 'radio' },
+  { id: 'clients', name: 'Clients', ico: 'clients', items: [
+    { id: 'clients', name: 'All Clients' },
+    { id: 'wclients', name: 'WiFi Clients' },
   ]},
-  { label: 'Routing', items: [
-    { id: 'routes', name: 'Routes', ico: 'route' },
+  { id: 'security', name: 'Security', ico: 'shield', items: [
+    { id: 'firewall', name: 'Firewall' },
   ]},
-  { label: 'Insights', items: [
-    { id: 'events', name: 'Events', ico: 'event' },
-    { id: 'platform', name: 'Hardware', ico: 'hardware' },
+  { id: 'dpi', name: 'DPI', ico: 'spectrum', featured: true, items: [
+    { id: 'dpi', name: 'Traffic Identification' },
   ]},
-  { label: 'System', items: [
-    { id: 'config', name: 'Config & Revisions', ico: 'config' },
-    { id: 'users', name: 'Users', ico: 'users' },
-    { id: 'audit', name: 'Audit', ico: 'audit' },
+  { id: 'insights', name: 'Insights', ico: 'topology', items: [
+    { id: 'topology', name: 'Topology' },
+    { id: 'events', name: 'Events' },
+    { id: 'platform', name: 'Hardware' },
+  ]},
+  { id: 'settings', name: 'Settings', ico: 'config', settings: true, items: [
+    { id: 'controller', name: 'UniFi Network' },
+    { id: 'config', name: 'Configuration' },
+    { id: 'users', name: 'Administrators' },
+    { id: 'audit', name: 'Audit Log' },
   ]},
 ];
 
-const PAGE_TITLES = Object.fromEntries(
-  NAV.flatMap((g) => g.items).map((i) => [i.id, i.name]));
+const PAGE_TITLES = Object.fromEntries(NAV.flatMap((section) =>
+  section.items.map((item) => [item.id, item.name])));
+
+function sectionForPage(page = store.page) {
+  return NAV.find((section) => section.items.some((item) => item.id === page)) || NAV[0];
+}
 
 /* ============================================================ auth screens */
 
@@ -353,9 +367,9 @@ function renderAuth({ setup }) {
   return h('div', { class: 'auth-wrap' },
     h('div', { class: 'card auth-card' },
       h('div', { class: 'brand' },
-        h('div', { class: 'logo' }, '◆'),
-        h('div', {}, h('div', { class: 'name' }, 'SBE1V1K Gateway'),
-          h('div', { class: 'sub' }, 'IPQ9574 · Wi-Fi 7'))),
+        h('div', { class: 'logo unifi-mark' }, 'U'),
+        h('div', {}, h('div', { class: 'name' }, 'UniFi Network'),
+          h('div', { class: 'sub' }, 'SBE1V1K Gateway · IPQ9574'))),
       h('div', { class: 'body' },
         h('h2', {}, setup ? 'First-time setup' : 'Sign in'),
         h('p', { class: 'lead' }, setup
@@ -367,24 +381,32 @@ function renderAuth({ setup }) {
 /* ============================================================ app shell */
 
 function renderShell() {
+  const activeSection = sectionForPage();
+  const primary = NAV.filter((section) => !section.settings);
+  const settings = NAV.find((section) => section.settings);
+  const navItem = (section) => h('a', {
+    class: `${activeSection.id === section.id ? 'active' : ''}${section.featured ? ' featured' : ''}`,
+    title: section.name,
+    onclick: () => go(section.items[0].id),
+  }, icon(section.ico, 19, 'ico'), h('span', { class: 'nav-name' }, section.name),
+  section.id === 'insights' ? badgeForEvents() : null);
+
   const nav = h('nav', { class: 'nav' },
-    NAV.map((group) => h('div', { class: 'group' },
-      group.label ? h('div', { class: 'label' }, group.label) : null,
-      group.items.map((item) => h('a', {
-        class: store.page === item.id ? 'active' : '',
-        onclick: () => go(item.id),
-      }, icon(item.ico, 15, 'ico'), item.name,
-        item.id === 'events' ? badgeForEvents() : null)))));
+    h('div', { class: 'nav-section-label' }, 'Network'),
+    primary.map(navItem),
+    h('div', { class: 'nav-spacer' }),
+    settings ? navItem(settings) : null);
 
   const board = store.dashboard?.system?.board || {};
   const side = h('aside', { class: 'side' },
     h('div', { class: 'brand' },
-      h('div', { class: 'logo' }, icon('radio', 15)),
+      h('div', { class: 'logo unifi-mark' }, 'U'),
       h('div', { style: 'min-width:0' },
-        h('div', { class: 'name' }, 'SBE1V1K'),
-        h('div', { class: 'sub' }, board.model || 'IPQ9574 Gateway'))),
+        h('div', { class: 'name' }, 'UniFi Network'),
+        h('div', { class: 'sub' }, 'SBE1V1K · ' + (board.model || 'IPQ9574')))),
     nav,
     h('div', { class: 'side-foot' },
+      h('div', { class: 'avatar' }, (store.user?.name || 'A').slice(0, 1).toUpperCase()),
       h('div', { class: 'who' },
         h('b', {}, store.user ? store.user.name : ''),
         h('span', {}, store.user ? store.user.role : '')),
@@ -392,11 +414,19 @@ function renderShell() {
         icon('power', 15))));
 
   const body = h('div', { class: 'content', id: 'page-body' });
+  const sectionTabs = activeSection.items.length > 1
+    ? h('nav', { class: 'section-tabs', 'aria-label': `${activeSection.name} pages` },
+        activeSection.items.map((item) => h('button', {
+          class: store.page === item.id ? 'on' : '', onclick: () => go(item.id),
+        }, item.name)))
+    : null;
   const main = h('main', { class: 'main' },
     h('header', { class: 'top' },
       h('button', { class: 'icon', onclick: () =>
         $('.app').classList.toggle('nav-open') }, icon('menu', 16)),
-      h('h1', {}, PAGE_TITLES[store.page] || 'Gateway'),
+      h('div', { class: 'page-identity' },
+        h('span', {}, activeSection.name),
+        h('h1', {}, PAGE_TITLES[store.page] || 'Gateway')),
       h('div', { class: 'spacer' }),
       liveIndicator(),
       h('button', { class: 'icon', title: 'Light / dark theme',
@@ -404,9 +434,12 @@ function renderShell() {
         icon(currentTheme() === 'dark' ? 'sun' : 'moon', 15)),
       h('button', { class: 'icon', title: 'Refresh', onclick: () => refresh(true) },
         icon('refresh', 15))),
+    sectionTabs,
     body);
 
-  return h('div', { class: 'app' }, side, main);
+  const scrim = h('button', { class: 'mobile-scrim', 'aria-label': 'Close navigation',
+    onclick: () => $('.app')?.classList.remove('nav-open') });
+  return h('div', { class: 'app' }, side, scrim, main);
 }
 
 function badgeForEvents() {
@@ -483,6 +516,12 @@ function alertBanners() {
 
 const pages = {};
 
+function pageLead(title, description, actions = []) {
+  return h('div', { class: 'page-lead' },
+    h('div', {}, h('h2', {}, title), h('p', {}, description)),
+    actions.length ? h('div', { class: 'page-actions' }, actions) : null);
+}
+
 /* ------------------------------------------------------------- dashboard */
 
 pages.dashboard = async (root) => {
@@ -496,6 +535,12 @@ pages.dashboard = async (root) => {
   const wanTx = Object.entries(series).find(([k]) => k.endsWith('.tx_bps'));
 
   root.append(
+    pageLead('Network overview', 'Internet, clients and gateway health at a glance.', [
+      h('button', { onclick: () => go('wan') }, icon('internet', 15), 'Internet'),
+      h('button', { onclick: () => go('ssids') }, icon('ssid', 15), 'WiFi'),
+      h('button', { class: 'primary', onclick: () => go('dpi') },
+        icon('spectrum', 15), 'Open DPI'),
+    ]),
     ...alertBanners(),
     h('div', { class: 'grid c4' },
       statCard('Internet', primary.state || 'down', {
@@ -948,6 +993,359 @@ function newNetworkModal() {
       idInput), form),
     () => mutate(() => api('/networks', { method: 'POST',
       body: { id: idInput.value.trim(), ...collect() } }), 'Network created'));
+}
+
+/* --------------------------------------------------------- traffic and DNS */
+
+const listLines = (value) => String(value || '').split(/[\n,]+/)
+  .map((part) => part.trim()).filter(Boolean);
+
+pages.services = async (root) => {
+  const data = await api('/services');
+  const qos = data.qos || {};
+  const dns = data.dns || {};
+  const filtering = dns.filtering || {};
+  const qstat = data.status?.qos || {};
+  const dstat = data.status?.dns || {};
+
+  const qosEnabled = h('input', { type: 'checkbox', checked: !!qos.enabled });
+  const download = h('input', { type: 'number', min: '0', step: '1',
+    value: (qos.download_kbps || 0) / 1000 });
+  const upload = h('input', { type: 'number', min: '0', step: '1',
+    value: (qos.upload_kbps || 0) / 1000 });
+  const shapeFields = [download, upload];
+  const syncQos = () => shapeFields.forEach((field) => { field.disabled = !qosEnabled.checked; });
+  qosEnabled.addEventListener('change', syncQos);
+  syncQos();
+
+  const qosState = !qstat.requested ? pill('Off', 'mute')
+    : qstat.effective ? pill('Active', 'ok')
+      : pill(qstat.error ? 'Error' : 'Waiting', qstat.error ? 'bad' : 'warn');
+  const qosCard = h('div', { class: 'card' },
+    h('header', {}, h('h2', {}, 'Smart Queues'), h('div', { class: 'spacer' }), qosState),
+    h('div', { class: 'body' },
+      qstat.error ? h('div', { class: 'banner bad' }, icon('error', 15),
+        h('div', {}, qstat.error)) : null,
+      h('p', { class: 'small dim service-copy' },
+        'CAKE keeps latency predictable when the WAN is busy. Set rates slightly below the measured line speed.'),
+      h('label', { class: 'field inline' }, qosEnabled,
+        h('span', { style: 'margin:0' }, 'Enable Smart Queues')),
+      h('div', { class: 'row' },
+        h('label', { class: 'field' }, h('span', {}, 'Download',
+          h('span', { class: 'help' }, ' — Mbps')), download),
+        h('label', { class: 'field' }, h('span', {}, 'Upload',
+          h('span', { class: 'help' }, ' — Mbps')), upload)),
+      h('div', { class: 'service-runtime' }, (qstat.interfaces || []).map((entry) =>
+        h('div', { class: 'small' }, h('span', { class: 'mono' }, entry.interface), ' ',
+          pill(entry.download_active ? 'down shaped' : 'down direct',
+            entry.download_active ? 'info' : 'mute'), ' ',
+          pill(entry.upload_active ? 'up shaped' : 'up direct',
+            entry.upload_active ? 'info' : 'mute')))),
+      h('button', { class: 'primary sm', onclick: () => mutate(() =>
+        api('/services', { method: 'PUT', body: { qos: {
+          enabled: qosEnabled.checked,
+          download_kbps: Math.round(Number(download.value || 0) * 1000),
+          upload_kbps: Math.round(Number(upload.value || 0) * 1000),
+        }} }), 'Smart Queue settings updated') }, 'Apply')));
+
+  const upstream = h('textarea', { rows: '3', value: (dns.upstream || []).join('\n'),
+    spellcheck: 'false' });
+  const cache = h('input', { type: 'number', min: '0', max: '100000',
+    value: dns.cache_size ?? 4096 });
+  const dnssec = h('input', { type: 'checkbox', checked: !!dns.dnssec });
+  const queryLog = h('input', { type: 'checkbox', checked: !!dns.query_log });
+  const filterEnabled = h('input', { type: 'checkbox', checked: !!filtering.enabled });
+  const blocklist = h('textarea', { rows: '4', value: (filtering.blocklist || []).join('\n'),
+    spellcheck: 'false', placeholder: 'telemetry.example.com' });
+  const allowlist = h('textarea', { rows: '4', value: (filtering.allowlist || []).join('\n'),
+    spellcheck: 'false', placeholder: 'allowed.example.com' });
+  const filterFields = [blocklist, allowlist];
+  const syncFilter = () => filterFields.forEach((field) => {
+    field.disabled = !filterEnabled.checked;
+  });
+  filterEnabled.addEventListener('change', syncFilter);
+  syncFilter();
+
+  const dnsCard = h('div', { class: 'card' },
+    h('header', {}, h('h2', {}, 'DNS resolver'), h('div', { class: 'spacer' }),
+      pill(dstat.running ? 'Running' : 'Stopped', dstat.running ? 'ok' : 'bad')),
+    h('div', { class: 'body' },
+      dstat.error ? h('div', { class: 'banner bad' }, icon('error', 15),
+        h('div', {}, dstat.error)) : null,
+      h('label', { class: 'field' }, h('span', {}, 'Upstream resolvers',
+        h('span', { class: 'help' }, ' — one address per line')), upstream),
+      h('label', { class: 'field' }, h('span', {}, 'Cache entries'), cache),
+      h('div', { class: 'row' },
+        h('label', { class: 'field inline' }, dnssec,
+          h('span', { style: 'margin:0' }, 'Validate DNSSEC')),
+        h('label', { class: 'field inline' }, queryLog,
+          h('span', { style: 'margin:0' }, 'Log DNS queries'))),
+      h('div', { class: 'service-divider' }),
+      h('label', { class: 'field inline' }, filterEnabled,
+        h('span', { style: 'margin:0' }, 'Domain filtering')),
+      h('div', { class: 'row' },
+        h('label', { class: 'field' }, h('span', {}, 'Blocklist'), blocklist),
+        h('label', { class: 'field' }, h('span', {}, 'Allowlist'), allowlist)),
+      h('button', { class: 'primary sm', onclick: () => mutate(() =>
+        api('/services', { method: 'PUT', body: { dns: {
+          upstream: listLines(upstream.value), cache_size: Number(cache.value),
+          dnssec: dnssec.checked, query_log: queryLog.checked,
+          filtering: { enabled: filterEnabled.checked,
+            blocklist: listLines(blocklist.value), allowlist: listLines(allowlist.value) },
+        }} }), 'DNS settings updated') }, 'Apply')));
+
+  const records = dns.records || [];
+  const recordTable = dataTable(
+    ['Name', 'Type', 'Value', ''], records,
+    (record, index) => h('tr', {},
+      h('td', { class: 'mono small' }, record.name),
+      h('td', {}, pill(record.type || 'A', 'mute')),
+      h('td', { class: 'mono small' }, record.value),
+      h('td', {}, h('button', { class: 'sm ghost danger', onclick: () =>
+        confirmDelete(`DNS record ${record.name}`, () => api('/services', {
+          method: 'PUT', body: { dns: { records: records.filter((_r, i) => i !== index) } },
+        })) }, 'Delete'))),
+    'No local DNS records.');
+  const recordsCard = tableCard('Local DNS records',
+    h('button', { class: 'primary sm', onclick: () => dnsRecordModal(records) },
+      '+ New record'), recordTable);
+
+  const forwarders = dns.conditional_forwarders || [];
+  const forwarderTable = dataTable(
+    ['Domain', 'Resolver', ''], forwarders,
+    (entry, index) => h('tr', {},
+      h('td', { class: 'mono small' }, entry.domain),
+      h('td', { class: 'mono small' }, entry.server),
+      h('td', {}, h('button', { class: 'sm ghost danger', onclick: () =>
+        confirmDelete(`forwarder for ${entry.domain}`, () => api('/services', {
+          method: 'PUT', body: { dns: { conditional_forwarders:
+            forwarders.filter((_r, i) => i !== index) } },
+        })) }, 'Delete'))),
+    'No conditional forwarders.');
+  const forwardersCard = tableCard('Conditional forwarding',
+    h('button', { class: 'primary sm', onclick: () => dnsForwarderModal(forwarders) },
+      '+ New forwarder'), forwarderTable);
+
+  root.append(h('div', { class: 'grid c2 service-grid' }, qosCard, dnsCard),
+    h('div', { class: 'grid c2 mt' }, recordsCard, forwardersCard));
+};
+
+/* ------------------------------------------------ traffic identification */
+
+pages.dpi = async (root) => {
+  const data = await api('/dpi');
+  const cfg = data.config || {};
+  const status = data.status || {};
+  const applications = data.applications || [];
+  const clients = data.clients || [];
+  const rxBytes = applications.reduce((sum, app) => sum + Number(app.rx_bytes || 0), 0);
+  const txBytes = applications.reduce((sum, app) => sum + Number(app.tx_bytes || 0), 0);
+  const totalBytes = rxBytes + txBytes;
+  const topApplication = applications.reduce((best, app) =>
+    Number(app.rx_bytes || 0) + Number(app.tx_bytes || 0)
+      > Number(best?.rx_bytes || 0) + Number(best?.tx_bytes || 0) ? app : best, null);
+  const enabled = h('input', { type: 'checkbox', checked: !!cfg.enabled });
+  const ipv6 = h('input', { type: 'checkbox', checked: cfg.include_ipv6 !== false });
+  const retention = h('input', { type: 'number', min: '1', max: '720', step: '1',
+    value: cfg.retention_hours || 24 });
+
+  const state = !cfg.enabled ? pill('Off', 'mute')
+    : status.running ? pill('Inspecting', 'ok')
+      : pill(status.tool_available ? 'Stopped' : 'Suricata missing', 'bad');
+  const apply = () => mutate(() => api('/dpi', { method: 'PUT', body: {
+    enabled: enabled.checked, engine: 'suricata',
+    retention_hours: Number(retention.value), include_ipv6: ipv6.checked,
+  }}), 'DPI settings updated');
+
+  root.append(
+    pageLead('Deep Packet Inspection',
+      'See which applications and clients are using the connection. DPI records flow metadata and byte counts; payloads are never stored.', [state]),
+    status.error ? h('div', { class: 'banner bad' }, icon('error', 15, 'ico'),
+      h('div', {}, status.error)) : null,
+
+    h('div', { class: 'grid kpi-grid' },
+      statCard('Identified traffic', fmtBytes(totalBytes), {
+        hint: `↓ ${fmtBytes(rxBytes)} · ↑ ${fmtBytes(txBytes)}` }),
+      statCard('Applications', applications.length, {
+        hint: topApplication ? `Top: ${topApplication.name}` : 'Waiting for classified flows' }),
+      statCard('Active clients', clients.length, {
+        hint: `${clients.length} with identified traffic` }),
+      statCard('DPI engine', status.running ? 'Running' : cfg.enabled ? 'Stopped' : 'Off', {
+        hint: status.tool_available ? 'Suricata 7 · flow metadata only' : 'Suricata is unavailable' })),
+
+    h('div', { class: 'card mt dpi-settings' },
+      h('div', { class: 'body' },
+        h('label', { class: 'switch-row' },
+          h('div', {}, h('b', {}, 'Deep Packet Inspection'),
+            h('span', {}, 'Classify application traffic across LAN networks.')),
+          h('span', { class: 'switch' }, enabled, h('i', {}))),
+        h('div', { class: 'settings-inline' },
+          h('label', { class: 'field' }, h('span', {}, 'Data retention'),
+            h('div', { class: 'input-suffix' }, retention, h('span', {}, 'hours'))),
+          h('label', { class: 'switch-row compact' },
+            h('div', {}, h('b', {}, 'Include IPv6'),
+              h('span', {}, 'Inspect IPv4 and IPv6 flows.')),
+            h('span', { class: 'switch' }, ipv6, h('i', {}))),
+          h('button', { class: 'primary', onclick: apply }, 'Apply changes')))),
+
+    h('div', { class: 'grid c2 mt dpi-tables' },
+      tableCard('Applications', h('span', { class: 'header-note' },
+        `${applications.length} identified`),
+        dataTable(['Application', ['Traffic', { num: true }], 'Share'],
+          applications, (app) => {
+            const bytes = Number(app.rx_bytes || 0) + Number(app.tx_bytes || 0);
+            const share = totalBytes ? Math.round(bytes * 100 / totalBytes) : 0;
+            return [
+              h('div', { class: 'traffic-name' },
+                h('span', { class: 'app-mark' }, (app.name || '?').slice(0, 1).toUpperCase()),
+                h('div', {}, h('b', {}, app.name),
+                  h('span', { class: 'mono' }, app.protocol))),
+              h('div', {}, h('b', {}, fmtBytes(bytes)),
+                h('span', { class: 'traffic-split' },
+                  `↓ ${fmtBytes(app.rx_bytes)} · ↑ ${fmtBytes(app.tx_bytes)}`)),
+              h('div', { class: 'share-cell' }, h('b', {}, `${share}%`),
+                h('div', { class: 'bar' }, h('i', { style: `width:${share}%` }))),
+            ];
+          }, 'No classified applications yet. Enable DPI and generate traffic.')),
+      tableCard('Clients', h('span', { class: 'header-note' },
+        `${clients.length} active`),
+        dataTable(['Client', ['Traffic', { num: true }], ['Download', { num: true }],
+          ['Upload', { num: true }]], clients, (client) => [
+            h('div', { class: 'traffic-name' },
+              h('span', { class: 'client-mark' }, icon('device', 15)),
+              h('div', {}, h('b', { class: 'mono' }, client.client),
+                h('span', { class: 'mono' }, client.client_ip || ''))),
+            h('b', {}, fmtBytes(Number(client.rx_bytes || 0) + Number(client.tx_bytes || 0))),
+            fmtBytes(client.rx_bytes), fmtBytes(client.tx_bytes),
+          ], 'No client traffic identified yet.'))));
+};
+
+/* ------------------------------------------------------ UniFi controller */
+
+pages.controller = async (root) => {
+  const data = await api('/controller');
+  const cfg = data.config || {};
+  const state = data.state || {};
+  const enabled = h('input', { type: 'checkbox', checked: !!cfg.enabled });
+  const discovery = h('input', { type: 'checkbox', checked: cfg.discovery !== false });
+  const sync = h('input', { type: 'checkbox', checked: !!cfg.sync_enabled });
+  const verifyTls = h('input', { type: 'checkbox', checked: cfg.verify_tls !== false });
+  const inform = h('input', { type: 'url', value: cfg.inform_url || '',
+    placeholder: 'http://network.example:8080/inform', spellcheck: 'false' });
+  const interval = h('input', { type: 'number', min: '5', max: '300', step: '1',
+    value: cfg.interval_seconds || 10 });
+  const apiUrl = h('input', { type: 'url', value: cfg.api_url || '',
+    placeholder: 'https://console/proxy/network/integration/v1', spellcheck: 'false' });
+  const site = h('input', { type: 'text', value: cfg.site_id || '',
+    placeholder: 'Site UUID', spellcheck: 'false' });
+  const apiKey = h('input', { type: 'password', value: '',
+    placeholder: cfg.api_key === '********' ? 'Unchanged' : 'Network API key',
+    autocomplete: 'new-password', spellcheck: 'false' });
+
+  const syncFields = [apiUrl, site, apiKey, verifyTls];
+  const syncControls = () => syncFields.forEach((field) => { field.disabled = !sync.checked; });
+  sync.addEventListener('change', syncControls);
+  syncControls();
+
+  const apply = () => {
+    const body = {
+      enabled: enabled.checked, inform_url: inform.value.trim(),
+      discovery: discovery.checked, interval_seconds: Number(interval.value),
+      sync_enabled: sync.checked, api_url: apiUrl.value.trim(),
+      site_id: site.value.trim(), verify_tls: verifyTls.checked,
+    };
+    if (apiKey.value) body.api_key = apiKey.value;
+    return mutate(() => api('/controller', { method: 'PUT', body }),
+      'Controller settings updated');
+  };
+
+  const controllerState = !cfg.enabled ? pill('Off', 'mute')
+    : state.adopted ? pill('Adopted', 'ok') : pill('Waiting for adoption', 'warn');
+  root.append(
+    h('div', { class: 'grid c2' },
+      h('div', { class: 'card' },
+        h('header', {}, h('h2', {}, 'Console connection'),
+          h('div', { class: 'spacer' }), controllerState),
+        h('div', { class: 'body' },
+          state.error ? h('div', { class: 'banner bad' }, icon('error', 15, 'ico'),
+            h('div', {}, state.error)) : null,
+          !data.crypto_available ? h('div', { class: 'banner warn' }, icon('warn', 15, 'ico'),
+            h('div', {}, 'python3-cryptography is required for UniFi inform.')) : null,
+          h('label', { class: 'field inline' }, enabled,
+            h('span', { style: 'margin:0' }, 'Enable UniFi Network control')),
+          h('label', { class: 'field' }, h('span', {}, 'Inform URL'), inform),
+          h('div', { class: 'row' },
+            h('label', { class: 'field inline' }, discovery,
+              h('span', { style: 'margin:0' }, 'Layer-2 discovery')),
+            h('label', { class: 'field' }, h('span', {}, 'Inform interval',
+              h('span', { class: 'help' }, ' — seconds')), interval)),
+          h('button', { class: 'primary sm', onclick: apply }, 'Apply'))),
+
+      h('div', { class: 'card' },
+        h('header', {}, h('h2', {}, 'Network API synchronization'),
+          h('div', { class: 'spacer' }),
+          cfg.sync_enabled ? pill('Enabled', 'info') : pill('Off', 'mute')),
+        h('div', { class: 'body' },
+          h('p', { class: 'small dim service-copy' },
+            'Pulls supported networks, WiFi broadcasts and DNS policies from the documented local Network API.'),
+          h('label', { class: 'field inline' }, sync,
+            h('span', { style: 'margin:0' }, 'Synchronize desired state')),
+          h('label', { class: 'field' }, h('span', {}, 'Integration API URL'), apiUrl),
+          h('label', { class: 'field' }, h('span', {}, 'Site ID'), site),
+          h('label', { class: 'field' }, h('span', {}, 'API key'), apiKey),
+          h('label', { class: 'field inline' }, verifyTls,
+            h('span', { style: 'margin:0' }, 'Verify controller certificate')),
+          h('button', { class: 'primary sm', onclick: apply }, 'Apply')))),
+
+    h('div', { class: 'card mt' },
+      h('header', {}, h('h2', {}, 'Controller status')),
+      h('div', { class: 'body' },
+        h('div', { class: 'grid c4' },
+          kv('Pairing', state.adopted ? 'Adopted' : 'Not adopted'),
+          kv('Last inform', fmtTime(state.last_inform)),
+          kv('Last sync', fmtTime(state.last_sync)),
+          kv('Response', state.last_response || '—')),
+        (state.unsupported || []).length ? h('div', { class: 'banner warn mt' },
+          icon('warn', 15, 'ico'), h('div', {},
+            `Not applied by this gateway: ${state.unsupported.join(', ')}`)) : null,
+        h('div', { class: 'row mt' },
+          h('button', { class: 'sm', disabled: !cfg.enabled, onclick: () => mutate(() =>
+            api('/controller/inform', { method: 'POST' }), 'Inform sent') }, 'Send inform'),
+          h('button', { class: 'sm', disabled: !cfg.sync_enabled, onclick: () => mutate(() =>
+            api('/controller/sync', { method: 'POST' }), 'Controller state synchronized') },
+            'Sync now'),
+          h('button', { class: 'sm ghost danger', onclick: () =>
+            confirmAction('Reset controller pairing?',
+              'The gateway will return to the pending-adoption state.', () =>
+                api('/controller/reset', { method: 'POST' })) }, 'Reset pairing')))));
+};
+
+function dnsRecordModal(records) {
+  const name = h('input', { type: 'text', placeholder: 'printer.lan' });
+  const type = h('select', {}, ['A', 'AAAA', 'CNAME', 'SRV', 'TXT']
+    .map((kind) => h('option', { value: kind }, kind)));
+  const value = h('input', { type: 'text', placeholder: '192.168.2.20' });
+  modal('New local DNS record', h('div', {},
+    h('div', { class: 'row' },
+      h('label', { class: 'field' }, h('span', {}, 'Name'), name),
+      h('label', { class: 'field' }, h('span', {}, 'Type'), type)),
+    h('label', { class: 'field' }, h('span', {}, 'Value'), value)),
+  () => mutate(() => api('/services', { method: 'PUT', body: { dns: {
+    records: [...records, { name: name.value.trim(), type: type.value,
+      value: value.value.trim() }],
+  }} }), 'DNS record created'));
+}
+
+function dnsForwarderModal(forwarders) {
+  const domain = h('input', { type: 'text', placeholder: 'corp.example' });
+  const server = h('input', { type: 'text', placeholder: '10.0.0.53' });
+  modal('New conditional forwarder', h('div', { class: 'row' },
+    h('label', { class: 'field' }, h('span', {}, 'Domain'), domain),
+    h('label', { class: 'field' }, h('span', {}, 'Resolver'), server)),
+  () => mutate(() => api('/services', { method: 'PUT', body: { dns: {
+    conditional_forwarders: [...forwarders, { domain: domain.value.trim(),
+      server: server.value.trim() }],
+  }} }), 'Conditional forwarder created'));
 }
 
 /* ------------------------------------------------------------ wifi: radios */

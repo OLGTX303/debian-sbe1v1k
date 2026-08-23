@@ -24,11 +24,13 @@ from .api import ApiServer, ApiService
 from .auth import AuthManager
 from .clientd import ClientDatabase
 from .configd import ConfigStore
+from .dpi import DpiEngine
 from .events import EventBus
 from .hwd import HardwareManager
 from .netd import NetDaemon
 from .rf import ChannelAnalyzer
 from .telemetry import Sampler, TelemetryStore
+from .unifi import UniFiControllerAgent
 from .util import now, read_int, read_text, run, which
 from .wifid import WifiDaemon
 
@@ -79,6 +81,7 @@ class Gateway:
                                   commit_channel=self._commit_channel)
         self.clients = ClientDatabase(os.path.join(state_dir, "clients.db"),
                                       self.events)
+        self.dpi = DpiEngine(state_dir, self.clients, self.events)
         self.telemetry = TelemetryStore(os.path.join(state_dir, "metrics.db"))
         self.auth = AuthManager(os.path.join(state_dir, "auth.db"), self.config,
                                 self.events)
@@ -89,6 +92,7 @@ class Gateway:
 
         # Order matters: network before wireless, since BSSes join the bridge.
         self.config.register_applier("netd", self.netd)
+        self.config.register_applier("dpi", self.dpi)
         self.config.register_applier("wifid", self.wifid)
         self.config.register_health_check("connectivity", self._health_check)
 
@@ -96,10 +100,14 @@ class Gateway:
                                clients=self.clients,
                                config_getter=self.config.get_running,
                                events=self.events)
+        self.controller = UniFiControllerAgent(
+            state_dir, self.config, self.netd, self.wifid, self.clients,
+            dpi=self.dpi, events=self.events)
         self.api_service = ApiService(
             config_store=self.config, auth=self.auth, netd=self.netd,
             wifid=self.wifid, clients=self.clients, telemetry=self.telemetry,
-            sampler=self.sampler, events=self.events, rf=self.rf)
+            sampler=self.sampler, events=self.events, rf=self.rf,
+            dpi=self.dpi, controller=self.controller)
         self.api = ApiServer(self.api_service, host, port)
 
         self._stop = threading.Event()
@@ -228,6 +236,7 @@ class Gateway:
             started = time.monotonic()
             try:
                 snapshot = self.sampler.sample()
+                self.dpi.poll(self.config.get_running())
                 self.api_service.stream.publish("telemetry", {
                     "ts": snapshot["ts"],
                     "system": snapshot["system"],
@@ -375,7 +384,9 @@ class Gateway:
         self.api.start()
         for target, name in ((self._sample_loop, "sbegw-sampler"),
                              (self._health_loop, "sbegw-health"),
-                             (self._rf_loop, "sbegw-rf")):
+                             (self._rf_loop, "sbegw-rf"),
+                             (lambda: self.controller.run(self._stop),
+                              "sbegw-unifi")):
             thread = threading.Thread(target=target, daemon=True, name=name)
             thread.start()
             self._threads.append(thread)

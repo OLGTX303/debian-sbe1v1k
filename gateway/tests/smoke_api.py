@@ -157,6 +157,79 @@ status, data = request("POST", "/networks", {
     "dhcp": {"enabled": True, "start": "192.168.30.1", "end": "192.168.30.100"}})
 check("DHCP pool containing the gateway rejected", status == 422, msg(data))
 
+print("\n--- traffic and DNS services ---")
+status, data = request("GET", "/services")
+check("service settings load", status == 200 and "qos" in data and "dns" in data,
+      msg(data))
+check("service runtime status is explicit",
+      "qos" in data.get("status", {}) and "dns" in data.get("status", {}),
+      str(data.get("status")))
+
+status, data = request("PUT", "/services", {
+    "qos": {"enabled": True, "download_kbps": 0, "upload_kbps": 0}})
+check("Smart Queues require a line rate",
+      status == 422 and data.get("error", {}).get("details", {}).get("path") == "qos",
+      msg(data))
+
+status, data = request("PUT", "/services", {"dns": {"upstream": ["not-an-ip"]}})
+check("invalid DNS resolver is rejected with its field path",
+      status == 422 and data.get("error", {}).get("details", {}).get("path")
+      == "dns.upstream[0]", msg(data))
+
+status, data = request("PUT", "/services", {"dns": {"records": [
+    {"name": "safe.lan", "type": "TXT", "value": "ok\nserver=203.0.113.53"}]}})
+check("DNS record values cannot inject dnsmasq directives",
+      status == 422 and data.get("error", {}).get("details", {}).get("path")
+      == "dns.records[0].value", msg(data))
+
+status, data = request("PUT", "/services", {
+    "qos": {"enabled": True, "download_kbps": 900000, "upload_kbps": 90000},
+    "dns": {"upstream": ["1.1.1.1", "2606:4700:4700::1111"],
+            "dnssec": True,
+            "filtering": {"enabled": True,
+                          "blocklist": ["Telemetry.Example.com"],
+                          "allowlist": ["allowed.example.com"]},
+            "records": [{"name": "printer.lan", "type": "A",
+                         "value": "192.168.2.20"}],
+            "conditional_forwarders": [{"domain": "corp.example",
+                                         "server": "10.0.0.53"}]}})
+check("Smart Queues and DNS settings commit together", status == 200, msg(data))
+status, data = request("GET", "/services")
+check("service settings round-trip",
+      status == 200 and data.get("qos", {}).get("download_kbps") == 900000
+      and data.get("dns", {}).get("dnssec") is True,
+      str(data)[:160])
+check("DNS names are normalised",
+      data.get("dns", {}).get("filtering", {}).get("blocklist")
+      == ["telemetry.example.com"], str(data.get("dns", {}).get("filtering")))
+
+print("\n--- DPI and controller configuration ---")
+status, data = request("GET", "/dpi")
+check("DPI endpoint reports unavailable stub explicitly",
+      status == 200 and data.get("status", {}).get("running") is False, msg(data))
+status, data = request("PUT", "/dpi", {"enabled": False,
+                                        "retention_hours": 48})
+check("DPI settings commit", status == 200, msg(data))
+status, data = request("GET", "/controller")
+check("controller endpoint exposes pairing state",
+      status == 200 and "state" in data and "crypto_available" in data, msg(data))
+status, data = request("PUT", "/controller", {
+    "enabled": True, "inform_url": "not-a-controller"})
+check("invalid inform URL is rejected",
+      status == 422 and data.get("error", {}).get("details", {}).get("path")
+      == "controller.inform_url", msg(data))
+status, data = request("PUT", "/controller", {
+    "enabled": True, "inform_url": "http://192.0.2.20:8080/inform",
+    "sync_enabled": True,
+    "api_url": "https://192.0.2.20/proxy/network/integration/v1",
+    "api_key": "controller-secret-value",
+    "site_id": "01234567-89ab-cdef-0123-456789abcdef"})
+check("valid controller settings commit", status == 200, msg(data))
+status, data = request("GET", "/controller")
+check("controller API key is redacted",
+      status == 200 and data.get("config", {}).get("api_key") == "********",
+      str(data.get("config")))
+
 print("\n--- wifi and MLO ---")
 status, data = request("POST", "/wifi/networks", {
     "id": "main", "ssid": "SBE-Net", "bands": ["2g", "5g", "6g"], "network": "default",
@@ -244,6 +317,8 @@ status, data = request("GET", "/config")
 blob = json.dumps(data)
 check("passphrase never leaves the API", "Str0ng-WiFi-Pass" not in blob)
 check("password hash never leaves the API", "scrypt$" not in blob)
+check("controller API key never leaves the config API",
+      "controller-secret-value" not in blob)
 
 status, data = request("GET", "/wifi/networks")
 check("SSID list redacts the passphrase", "Str0ng-WiFi-Pass" not in json.dumps(data))
@@ -253,6 +328,8 @@ status, data = request("GET", "/audit")
 entries = data.get("items", [])
 check("commits are audited", status == 200 and len(entries) >= 3, f"{len(entries)} entries")
 check("audit redacts secrets in the diff", "Str0ng-WiFi-Pass" not in json.dumps(entries))
+check("audit redacts controller API keys",
+      "controller-secret-value" not in json.dumps(entries))
 
 status, data = request("GET", "/config/revisions")
 check("revision history recorded", status == 200 and len(data.get("items", [])) >= 3)
@@ -285,8 +362,9 @@ COOKIE["value"], CSRF["value"] = owner_cookie, owner_csrf
 print("\n--- misc routes ---")
 for path in ("/system", "/platform", "/ports", "/networks", "/wans", "/firewall",
              "/wifi/channels", "/wifi/channels/history",
-             "/nat", "/routing", "/wifi", "/wifi/radios", "/wifi/clients",
-             "/clients", "/telemetry", "/events", "/topology", "/health",
+             "/nat", "/routing", "/services", "/wifi", "/wifi/radios", "/wifi/clients",
+             "/clients", "/dpi", "/controller", "/telemetry", "/events",
+             "/topology", "/health",
              "/rbac", "/backups/export", "/config/pending"):
     status, _ = request("GET", path)
     check(f"GET {path}", status == 200)
@@ -427,6 +505,23 @@ check("...including that it needs a reboot",
 # A WAN-bridged SSID is on no network of ours; showing one would mislead.
 check("the SSID list marks WAN-bridged SSIDs instead of naming a network",
       "'WAN bridge'" in _app)
+
+print("\n--- traffic and DNS UI contract ---")
+check("navigation exposes Traffic & DNS", "Traffic & DNS" in _app)
+check("the page saves both service domains",
+      "body: { qos:" in _app and "body: { dns:" in _app)
+check("the page exposes local records and conditional forwarding",
+      "Local DNS records" in _app and "Conditional forwarding" in _app)
+check("navigation exposes DPI and UniFi control",
+      "id: 'dpi', name: 'Traffic Identification'" in _app and
+      "id: 'controller', name: 'UniFi Network'" in _app)
+check("DPI is a first-class primary navigation section",
+      "id: 'dpi', name: 'DPI', ico: 'spectrum', featured: true" in _app)
+check("the DPI page shows production traffic summaries",
+      "Deep Packet Inspection" in _app and "Identified traffic" in _app
+      and "Active clients" in _app and "Share" in _app)
+check("the controller API key is a password field",
+      "type: 'password', value: ''" in _app and "Network API key" in _app)
 
 print(f"\n{len(PASSED)} passed, {len(FAILED)} failed")
 if FAILED:

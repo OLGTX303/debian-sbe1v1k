@@ -20,6 +20,9 @@ Verified on hardware, not just in tests:
   mask spanning the radios it uses.
 - **Routing** — VLAN-aware bridge, multi-WAN with DHCP/static/PPPoE, nftables
   firewall with zones, NAT, port forwards, dnsmasq for DHCP/DNS.
+- **DPI and controller visibility** — passive Suricata traffic identification,
+  UniFi gateway discovery/inform telemetry, and opt-in desired-state sync from
+  the documented local Network Integration API.
 - **AP mode** and **per-SSID WAN bridging** — an SSID's clients can be bridged
   onto the upstream L2 and addressed by the upstream gateway instead of sitting
   behind this router's NAT.
@@ -33,10 +36,10 @@ Verified on hardware, not just in tests:
 ## Layout
 
 ```
-gateway/sbegw/     the control plane (Python, no runtime dependencies)
+gateway/sbegw/     the Python control plane (cryptography + optional services)
 gateway/web/       the management UI (vanilla JS, no build step)
 gateway/deploy/    systemd units, sysctl drop-ins, the overlay-root init
-gateway/tests/     ~720 assertions, runnable on any Linux host
+gateway/tests/     ~775 assertions, runnable on any Linux host
 scripts/           build the rootfs, install the gateway, pack an image
 doc/               the specification the control plane was written against
 ```
@@ -48,6 +51,7 @@ git clone https://github.com/OLGTX303/debian-sbe1v1k
 cd debian-sbe1v1k
 bash scripts/fetch-sources.sh          # checks host tools, fetches public
                                        # sources, applies the board patch
+bash scripts/build-qsdk-gateway-modules.sh # CAKE/IFB for Smart Queues
 ```
 
 `fetch-sources.sh` tells you exactly what it still needs and where to put it,

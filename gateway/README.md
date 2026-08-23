@@ -16,8 +16,11 @@ sbegw/
   configd.py      candidate/running config, transactional commit, rollback, audit
   schema.py       config schema + validation (the only gate before a commit)
   netd.py         ports, bridge/VLANs, networks, WANs, firewall, NAT, DHCP/DNS
+                  and CAKE/IFB Smart Queues
   wifid.py        radios, SSIDs, BSSes, MLO/MLD, wireless clients, RF, recovery
   clientd.py      unified wired + wireless client database
+  dpi.py          passive Suricata app identification + bounded flow accounting
+  unifi.py        UniFi discovery/inform and documented API desired-state sync
   telemetry.py    sampling, rate calculation, bounded retention
   events.py       event history, severity, filtering, live fan-out
   auth.py         local accounts, sessions, RBAC, API tokens, TOTP
@@ -244,6 +247,7 @@ python3 tests/smoke_configd.py        # transactional commit, rollback, audit
 python3 tests/smoke_api.py            # auth, RBAC, CSRF, validation, MLO, channels
 python3 tests/smoke_rf.py             # channel scoring, anti-flap, 240 MHz
 python3 tests/smoke_art.py            # ART parsing, bounds checks, secret gating
+python3 tests/smoke_dpi_unifi.py      # DPI totals, TNBU crypto, object mapping
 python3 tests/check_hostapd_keys.py   # every emitted hostapd key really exists
 ```
 
@@ -278,6 +282,8 @@ Implemented and exercised by the tests above:
 * 240 MHz on 5 GHz via EHT preamble puncturing, capability-gated
 * clients: merged DHCP/ARP/NDP/FDB/wireless view, naming, blocking, fixed IP
 * telemetry with bounded retention, events, SSE stream
+* Suricata application identification with per-client totals and UniFi DPI stats
+* UniFi gateway discovery/inform plus transactional Network API synchronization
 * auth: scrypt passwords, sessions, CSRF, rate limiting, TOTP, API tokens, RBAC
 * transactional config, revisions, rollback, audit; config backup/restore
 * UI covering the spec's navigation tree, in light and dark themes, using the
@@ -288,8 +294,8 @@ Not implemented yet — the API and UI do not pretend otherwise:
 * **FRR** (OSPF/BGP/BFD/VRF/VRRP): `frr` is not in the rootfs; `netd` reports
   this instead of silently ignoring the config
 * **VPN** (WireGuard/IPsec/OpenVPN): schema slots exist, no apply path
-* **IDS/IPS and DPI**: needs Suricata and an application-identification engine
-* **QoS/CAKE shaping**, PPSK, AFC, SD-WAN, mDNS reflector, UPnP
+* **IDS/IPS**: DPI is integrated, but blocking/signature enforcement is not
+* **PPSK, AFC, SD-WAN, mDNS reflector and UPnP**
 * **PPPoE** needs the `ppp`/`pppoe` packages added to the rootfs
 * Hardware offload is *detected and explained* but the NSS/PPE/ECM modules are
   not loaded by this build, so traffic is software-forwarded today

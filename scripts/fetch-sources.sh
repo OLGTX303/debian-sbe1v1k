@@ -133,6 +133,15 @@ else
     warr= ; warn "  QSDK wlan-hostapd package"
 fi
 
+qos_modules="$QSDK_ROOT/build_dir/target-aarch64_cortex-a73+neon-vfpv4_musl/root-ipq95xx/lib/modules"
+if find "$qos_modules" -type f -name 'sch_cake.ko*' -print -quit 2>/dev/null | grep -q . &&
+   find "$qos_modules" -type f -name 'ifb.ko*' -print -quit 2>/dev/null | grep -q .; then
+    note "  found Smart Queue kernel modules (CAKE + IFB)"
+else
+    warn "  Smart Queue kernel modules are not built yet"
+    warn "  run: QSDK=\"$QSDK_ROOT\" bash scripts/build-qsdk-gateway-modules.sh"
+fi
+
 # ------------------------------------------------------------- board patches
 
 KSRC="$QSDK_ROOT/qca/src/linux-6.6"
@@ -157,8 +166,9 @@ cat <<EOF
 
 [*] Ready. Next:
 
-      sudo ROOT_PASSWORD='choose-one' bash scripts/build-debian-rootfs.sh
-      sudo QSDK_ROOT="$QSDK_ROOT" bash scripts/install-gateway.sh
+      QSDK="$QSDK_ROOT" bash scripts/build-qsdk-gateway-modules.sh
+      sudo QSDK="$QSDK_ROOT" ROOT_PASSWORD='choose-one' bash scripts/build-debian-rootfs.sh
+      sudo QSDK="$QSDK_ROOT" bash scripts/install-gateway.sh
       sudo bash scripts/pack-debian-squashfs.sh
       sudo bash scripts/make-sysupgrade.sh
 

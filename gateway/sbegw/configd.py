@@ -465,7 +465,7 @@ class ConfigStore:
 
     # Substrings that mark a key as secret, wherever it appears.
     SECRET_KEYS = ("passphrase", "password", "psk", "secret", "private_key",
-                   "preshared", "token", "totp", "hash")
+                   "preshared", "token", "totp", "hash", "api_key")
 
     @classmethod
     def _is_secret_key(cls, key: str) -> bool:

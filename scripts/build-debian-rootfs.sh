@@ -82,6 +82,7 @@ install -d "$ROOTFS/etc/apt/sources.list.d" "$ROOTFS/etc/systemd/network" \
 cat > "$ROOTFS/etc/apt/sources.list" <<EOF
 deb $MIRROR bookworm main contrib non-free-firmware
 deb $MIRROR bookworm-updates main contrib non-free-firmware
+deb $MIRROR bookworm-backports main contrib non-free-firmware
 deb http://security.debian.org/debian-security bookworm-security main contrib non-free-firmware
 EOF
 cat > "$ROOTFS/etc/hostname" <<'EOF'
@@ -189,21 +190,21 @@ grep -qxF 'conf-dir=/etc/dnsmasq.d/,*.conf' "$ROOTFS/etc/dnsmasq.conf" || \
 
 # The SBE1V1K board firmware is not part of a generic Debian install.
 find "$ROOTFS/lib/firmware" -xtype l -delete 2>/dev/null || true
-cp -a "$BOARD_FW"/. "$ROOTFS/lib/firmware/"
+cp -a --no-preserve=ownership "$BOARD_FW"/. "$ROOTFS/lib/firmware/"
 # The Debian userspace must use modules built for the selected QSDK 6.6.116
 # kernel. Do not copy QSDK's musl userland over Debian's glibc userland.
 find "$ROOTFS/lib/firmware" -xtype l -delete 2>/dev/null || true
 MODULE_SOURCE_VERSION="$(basename "$QSDK_MODULES")"
 install -d "$ROOTFS/lib/modules/$KERNEL_RELEASE"
 find "$ROOTFS/lib/modules" -maxdepth 1 -type f -name '*.ko' -delete 2>/dev/null || true
-cp -a "$QSDK_MODULES"/. "$ROOTFS/lib/modules/$KERNEL_RELEASE/"
-cp -a "$QSDK_FIRMWARE"/. "$ROOTFS/lib/firmware/"
+cp -a --no-preserve=ownership "$QSDK_MODULES"/. "$ROOTFS/lib/modules/$KERNEL_RELEASE/"
+cp -a --no-preserve=ownership "$QSDK_FIRMWARE"/. "$ROOTFS/lib/firmware/"
 # The QSDK ath12k extension requests these by firmware-relative names
 # (global.ini, internal/global_i.ini, QCN9274.ini, ...), not from the WIFIFW
 # partition. Without them ath12k dereferences an uninitialized INI store and
 # panics during module insertion.
 install -d "$ROOTFS/lib/firmware/internal"
-cp -a "$QSDK_INI"/. "$ROOTFS/lib/firmware/"
+cp -a --no-preserve=ownership "$QSDK_INI"/. "$ROOTFS/lib/firmware/"
 find "$ROOTFS/lib/modules/$KERNEL_RELEASE" -type f -name '*.ko' -exec strip --strip-debug {} + 2>/dev/null || true
 
 cat > "$ROOTFS/etc/modules-load.d/sbe1v1k-qca.conf" <<'EOF'
@@ -461,7 +462,7 @@ EOF
 # are architecture-independent; QSDK kernel modules remain the hardware ABI.
 if [[ -d "$QSDK_ROOT/usr/etc/unifi-wifi" ]]; then
     install -d "$ROOTFS/usr/etc/unifi-wifi"
-    cp -a "$QSDK_ROOT/usr/etc/unifi-wifi"/. "$ROOTFS/usr/etc/unifi-wifi/"
+    cp -a --no-preserve=ownership "$QSDK_ROOT/usr/etc/unifi-wifi"/. "$ROOTFS/usr/etc/unifi-wifi/"
 fi
 if [[ -f "$QSDK_ROOT/usr/sbin/unifi-wifi-apply" ]]; then
     install -m 0755 "$QSDK_ROOT/usr/sbin/unifi-wifi-apply" "$ROOTFS/usr/local/sbin/unifi-wifi-apply"
@@ -470,7 +471,7 @@ fi
 # Copy only the static UCG portal frontend. Its native UCG runtime is not
 # included; API calls are handled by the Debian SBE1V1K control service.
 install -d "$ROOTFS/usr/share/sbe1v1k-portal"
-cp -a "$PORTAL_ASSETS"/. "$ROOTFS/usr/share/sbe1v1k-portal/"
+cp -a --no-preserve=ownership "$PORTAL_ASSETS"/. "$ROOTFS/usr/share/sbe1v1k-portal/"
 install -m 0644 "$PORTAL_INDEX" "$ROOTFS/usr/share/sbe1v1k-portal/index.html"
 
 cat > "$ROOTFS/etc/fstab" <<'EOF'
@@ -709,9 +710,14 @@ apt-get install -y --no-install-recommends \
     openssh-server sudo ca-certificates curl wget nginx \
     iproute2 iputils-ping ethtool net-tools \
     kmod pciutils usbutils \
-    nftables bridge-utils vlan iw wpasupplicant hostapd python3 dnsmasq \
+    nftables bridge-utils vlan iw wpasupplicant hostapd python3 \
+    python3-cryptography dnsmasq \
     locales tzdata less vim-tiny \
     docker.io docker-compose iptables
+# Suricata moved to Bookworm Backports.  Select that suite explicitly so its
+# matching libhtp2 is installed too; otherwise apt prefers Bookworm's older
+# library and rejects the DPI engine as an unsatisfied dependency.
+apt-get install -y -t bookworm-backports --no-install-recommends suricata
 # Docker's prerequisites were checked against this kernel before adding it:
 # cgroups v2 (the board mounts cgroup2fs), MEMCG, CGROUP_PIDS, NAMESPACES,
 # NET_NS, PID_NS, VETH, BRIDGE, OVERLAY_FS, NF_NAT and BRIDGE_NETFILTER are all

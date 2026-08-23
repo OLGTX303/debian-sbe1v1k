@@ -1028,6 +1028,32 @@ check("the self-accept precedes the fallthrough drop",
 check("crossing from one bridge to another is still policed",
       'iifname "br-wan" oifname "br-lan" counter accept' not in _fwd)
 
+
+print("\n--- the ruleset must not wipe other subsystems' netfilter state ---")
+# Every nftables table shares one namespace, and iptables-nft puts its chains
+# there too. `flush ruleset` therefore destroyed Docker's chains on every config
+# apply: dockerd creates the nat DOCKER chain at startup, sbegw deleted it
+# moments later, and `docker network create` died with
+#   iptables -t nat -I DOCKER ...: No chain/target/match by that name
+# Measured on hardware: 4 DOCKER nat chains before an apply, 0 after. With the
+# targeted deletes, 4 before and 4 after, and network creation succeeds.
+_rs2 = _nftS.render(_schA.default_config(), {"lan": ['"br-lan"']}, {})
+check("the ruleset never flushes everything",
+      "flush ruleset" not in _rs2, "it would wipe Docker's chains")
+for _t in ("inet sbegw", "ip sbegw_nat", "inet sbegw_mangle"):
+    check(f"it deletes its own table {_t}",
+          f"delete table {_t}" in _rs2, _t)
+# Declaring before deleting is what makes the delete work on a first boot.
+for _t in ("inet sbegw", "ip sbegw_nat", "inet sbegw_mangle"):
+    _decl, _del = _rs2.find(f"table {_t}\n"), _rs2.find(f"delete table {_t}")
+    check(f"{_t} is declared before it is deleted", 0 <= _decl < _del,
+          f"decl@{_decl} del@{_del}")
+# And it must not touch tables it does not own.
+check("no foreign table is deleted",
+      not any(l.startswith("delete table") and "sbegw" not in l
+              for l in _rs2.splitlines()),
+      str([l for l in _rs2.splitlines() if l.startswith("delete table")]))
+
 print(f"\n{len(PASSED)} passed, {len(FAILED)} failed")
 if FAILED:
     print("failed: " + ", ".join(FAILED))

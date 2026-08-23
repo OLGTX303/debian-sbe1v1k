@@ -25,10 +25,11 @@ fi
 QSDK="${QSDK:-$WS/../qsdk}"
 # The build_dir root: this is where the MLO-capable wpad is built.
 QSDK_ROOT="${QSDK_ROOT:-$QSDK/build_dir/target-aarch64_cortex-a73+neon-vfpv4_musl/root-ipq95xx}"
-# Optional directory of Inter/Lato .woff2 webfonts. Left empty by default: the
-# UI falls back to the platform UI font, and no font files are redistributed
-# with this project. Point it at your own copy if you want them embedded.
-BRAND_FONTS="${BRAND_FONTS:-}"
+# Reuse the UI assets from the supplied UniFi Core portal.  This is the actual
+# Inter/Lato set used by that console, rather than a browser-dependent system
+# font approximation.  Callers can still override either path explicitly.
+PORTAL_UI="${PORTAL_UI:-$WS/../ucgf_controller_port/rootfs_ucgf/usr/share/unifi-core/app/node_modules/@ubnt/unifi-portal/dist/local}"
+BRAND_FONTS="${BRAND_FONTS:-$PORTAL_UI/fonts}"
 
 die() { echo "ERROR: $*" >&2; exit 1; }
 note() { echo "[*] $*"; }
@@ -42,7 +43,8 @@ warn() { echo "[!] $*" >&2; }
 note "installing control plane to /opt/sbegw/lib"
 install -d "$ROOTFS/opt/sbegw/lib" "$ROOTFS/opt/sbegw/bin" "$ROOTFS/opt/sbegw/web"
 rm -rf "$ROOTFS/opt/sbegw/lib/sbegw"
-cp -a "$GATEWAY/sbegw" "$ROOTFS/opt/sbegw/lib/sbegw"
+cp -a --no-preserve=ownership "$GATEWAY/sbegw" "$ROOTFS/opt/sbegw/lib/sbegw"
+chmod -R go-w "$ROOTFS/opt/sbegw/lib/sbegw"
 find "$ROOTFS/opt/sbegw/lib" -name '__pycache__' -type d -prune -exec rm -rf {} +
 install -m 0644 "$GATEWAY/README.md" "$ROOTFS/opt/sbegw/README.md" 2>/dev/null || true
 
@@ -69,6 +71,13 @@ sed -e "s/app\.css?v=[A-Za-z0-9]*/app.css?v=$UI_VERSION/" \
     "$GATEWAY/web/index.html" > "$ROOTFS/opt/sbegw/web/index.html"
 chmod 0644 "$ROOTFS/opt/sbegw/web/index.html"
 note "UI asset version $UI_VERSION"
+
+if [[ -d "$PORTAL_UI" ]]; then
+    for asset in favicon.svg favicon.ico apple-touch-icon.png; do
+        [[ -f "$PORTAL_UI/$asset" ]] &&
+            install -m 0644 "$PORTAL_UI/$asset" "$ROOTFS/opt/sbegw/web/$asset"
+    done
+fi
 
 if [[ -d "$BRAND_FONTS" ]]; then
     note "copying Inter/Lato webfonts from $BRAND_FONTS"
@@ -455,6 +464,17 @@ if [[ -e "$ROOTFS/lib/systemd/system/dnsmasq.service" ]]; then
     note "masked the packaged dnsmasq.service (netd manages dnsmasq directly)"
 fi
 
+# The DPI engine renders a per-site configuration and starts its own Suricata
+# process.  Debian enables the stock service during package installation; if it
+# is left enabled, two AF_PACKET consumers compete for traffic and the stock
+# daemon also writes to paths that are unsuitable for the read-only image.
+if [[ -e "$ROOTFS/lib/systemd/system/suricata.service" ]]; then
+    ln -sf /dev/null "$ROOTFS/etc/systemd/system/suricata.service"
+    rm -f "$ROOTFS/etc/systemd/system/multi-user.target.wants/suricata.service"
+    rm -f "$ROOTFS"/etc/rc?.d/[SK]??suricata
+    note "masked the packaged suricata.service (sbegw manages DPI directly)"
+fi
+
 # --- the previous build's portal UI fights this one for the network and ports
 for unit in sbe1v1k-config-ui.service sbe1v1k-port-config.service; do
     if [[ -e "$ROOTFS/etc/systemd/system/$unit" ]]; then
@@ -598,17 +618,27 @@ for tool in ip bridge ethtool nft iw dnsmasq dhclient nginx openssl python3; do
         warn "missing in rootfs: $tool"
     fi
 done
-for tool in pppd wg vtysh suricata; do
+for tool in tc pppd wg vtysh suricata; do
     if ! find "$ROOTFS/usr/sbin" "$ROOTFS/usr/bin" -maxdepth 1 -name "$tool" \
             2>/dev/null | grep -q .; then
         echo "    optional (feature disabled until installed): $tool"
+    fi
+done
+if [[ ! -d "$ROOTFS/usr/lib/python3/dist-packages/cryptography" ]]; then
+    warn "missing in rootfs: python3-cryptography (UniFi inform disabled)"
+fi
+
+for module in sch_cake ifb act_mirred cls_matchall; do
+    if ! find "$ROOTFS/lib/modules" -type f -name "$module.ko*" -print -quit \
+            2>/dev/null | grep -q .; then
+        echo "    optional (Smart Queues disabled until QSDK module is built): $module"
     fi
 done
 
 cat <<EOF
 
 Installed:
-  /opt/sbegw/lib/sbegw     control plane (netd, wifid, configd, api)
+  /opt/sbegw/lib/sbegw     control plane (netd, wifid, DPI, UniFi, configd, api)
   /opt/sbegw/bin/sbegw     launcher
   /opt/sbegw/bin/hostapd   MLO-capable hostapd shim
   /opt/sbegw/wifi          QSDK hostapd + musl runtime

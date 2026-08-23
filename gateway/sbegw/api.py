@@ -123,7 +123,7 @@ class ApiService:
     """Holds the wiring and registers every route."""
 
     def __init__(self, *, config_store, auth: AuthManager, netd, wifid, clients,
-                 telemetry, sampler, events, rf=None):
+                 telemetry, sampler, events, rf=None, dpi=None, controller=None):
         self.config = config_store
         self.auth = auth
         self.netd = netd
@@ -133,6 +133,8 @@ class ApiService:
         self.sampler = sampler
         self.events = events
         self.rf = rf
+        self.dpi = dpi
+        self.controller = controller
         self.stream = EventStream()
         self.router = Router()
         self._register()
@@ -210,6 +212,14 @@ class ApiService:
         add("PUT", "/system", self.put_system, "system.write")
         add("GET", "/dashboard", self.get_dashboard, "system.read")
         add("GET", "/health", self.get_health, "system.read")
+        add("GET", "/controller", self.get_controller, "system.read")
+        add("PUT", "/controller", self.put_controller, "system.write")
+        add("POST", "/controller/inform", self.post_controller_inform,
+            "system.write")
+        add("POST", "/controller/sync", self.post_controller_sync,
+            "system.write")
+        add("POST", "/controller/reset", self.post_controller_reset,
+            "system.write")
 
         # --- ports
         add("GET", "/ports", self.get_ports, "network.read")
@@ -235,6 +245,14 @@ class ApiService:
         # --- routing
         add("GET", "/routing", self.get_routing, "routing.read")
         add("PUT", "/routing", self.put_routing, "routing.write")
+
+        # --- traffic management / DNS services
+        add("GET", "/services", self.get_services, "network.read")
+        add("PUT", "/services", self.put_services, "network.write")
+
+        # --- application-aware traffic accounting
+        add("GET", "/dpi", self.get_dpi, "security.read")
+        add("PUT", "/dpi", self.put_dpi, "security.write")
 
         # --- wifi
         add("GET", "/wifi", self.get_wifi, "network.read")
@@ -299,6 +317,90 @@ class ApiService:
         add("POST", "/backups/import", self.post_backup, "backup.manage")
 
     # ============================================================ handlers
+
+    def get_dpi(self, ctx) -> dict[str, Any]:
+        cfg = self.config.get_running()
+        if self.dpi is None:
+            return {"config": cfg.get("dpi", {}),
+                    "status": {"running": False, "tool_available": False,
+                               "error": "DPI service is unavailable", "flow_count": 0},
+                    "applications": [], "clients": []}
+        self.dpi.poll(cfg)
+        return self.dpi.summary(cfg)
+
+    def put_dpi(self, ctx) -> dict[str, Any]:
+        body = ctx.json()
+        allowed = {"enabled", "engine", "retention_hours", "include_ipv6"}
+        unknown = sorted(set(body) - allowed)
+        if unknown:
+            raise ApiError(400, "bad_request",
+                           f"unknown DPI settings: {', '.join(unknown)}")
+
+        def mutate(cfg: dict[str, Any]) -> None:
+            cfg["dpi"].update(body)
+
+        return self._commit(ctx.principal, ctx.source_ip,
+                            "traffic identification settings", mutate,
+                            confirm=False)
+
+    def get_controller(self, ctx) -> dict[str, Any]:
+        if self.controller is not None:
+            return self.controller.status()
+        cfg = self.config.get_running().get("controller", {})
+        return {"config": _redact_secrets(cfg),
+                "state": {"adopted": False,
+                          "error": "controller agent unavailable"},
+                "crypto_available": False}
+
+    def put_controller(self, ctx) -> dict[str, Any]:
+        body = ctx.json()
+        allowed = {"enabled", "inform_url", "discovery", "sync_enabled",
+                   "api_url", "api_key", "site_id", "verify_tls",
+                   "interval_seconds"}
+        unknown = sorted(set(body) - allowed)
+        if unknown:
+            raise ApiError(400, "bad_request",
+                           f"unknown controller settings: {', '.join(unknown)}")
+        updates = {k: v for k, v in body.items()
+                   if not (k == "api_key" and v == "********")}
+
+        def mutate(cfg: dict[str, Any]) -> None:
+            cfg["controller"].update(updates)
+
+        result = self._commit(ctx.principal, ctx.source_ip,
+                              "UniFi Network controller settings", mutate,
+                              confirm=False)
+        if self.controller is not None:
+            self.controller.wake()
+        return result
+
+    def post_controller_inform(self, ctx) -> dict[str, Any]:
+        if self.controller is None:
+            raise ApiError(503, "unavailable", "controller agent is unavailable")
+        try:
+            return {"ok": True, "response": self.controller.inform_once()}
+        except Exception as exc:  # protocol boundary; return a useful UI error
+            raise ApiError(502, "controller_failed", str(exc)) from exc
+
+    def post_controller_sync(self, ctx) -> dict[str, Any]:
+        if self.controller is None:
+            raise ApiError(503, "unavailable", "controller agent is unavailable")
+        cfg = self.config.get_running()
+        if not cfg.get("controller", {}).get("sync_enabled"):
+            raise ApiError(409, "sync_disabled", "controller API sync is disabled")
+        try:
+            return self.controller.sync_once(cfg)
+        except schema.ValidationError as exc:
+            raise ApiError(422, "validation_failed", str(exc),
+                           {"path": exc.path}) from exc
+        except Exception as exc:  # protocol boundary; return a useful UI error
+            raise ApiError(502, "controller_failed", str(exc)) from exc
+
+    def post_controller_reset(self, ctx) -> dict[str, Any]:
+        if self.controller is None:
+            raise ApiError(503, "unavailable", "controller agent is unavailable")
+        self.controller.reset()
+        return {"ok": True}
 
     def get_setup(self, ctx) -> dict[str, Any]:
         return {"setup_required": self.auth.needs_setup(),
@@ -666,6 +768,51 @@ class ApiService:
             _deep_update(cfg["routing"], body)
 
         return self._commit(ctx.principal, ctx.source_ip, "routing", mutate)
+
+    # ------------------------------------------------------ traffic / DNS
+
+    def get_services(self, ctx) -> dict[str, Any]:
+        cfg = self.config.get_running()
+        traffic = getattr(self.netd, "traffic", None)
+        traffic_status = traffic.status(cfg) if traffic else {
+            "requested": bool(cfg.get("qos", {}).get("enabled")),
+            "effective": False, "tool_available": None,
+            "interfaces": [], "error": None,
+        }
+        dns_service = getattr(self.netd, "services", None)
+        dns_running = bool(dns_service and dns_service._running())
+        return {
+            "qos": cfg.get("qos", {}),
+            "dns": cfg.get("dns", {}),
+            "status": {
+                "qos": traffic_status,
+                "dns": {
+                    "running": dns_running,
+                    "error": getattr(dns_service, "last_error", None),
+                },
+            },
+        }
+
+    def put_services(self, ctx) -> dict[str, Any]:
+        body = ctx.json()
+        if not isinstance(body, dict):
+            raise ApiError(400, "bad_request", "request body must be an object")
+        unknown = sorted(set(body) - {"qos", "dns"})
+        if unknown:
+            raise ApiError(400, "bad_request",
+                           f"unknown service setting(s): {', '.join(unknown)}")
+        if not body:
+            raise ApiError(400, "bad_request", "qos or dns settings are required")
+
+        def mutate(cfg: dict[str, Any]) -> None:
+            for key in ("qos", "dns"):
+                if key in body:
+                    if not isinstance(body[key], dict):
+                        raise ValueError(f"{key} must be an object")
+                    _deep_update(cfg.setdefault(key, {}), body[key])
+
+        return self._commit(ctx.principal, ctx.source_ip,
+                            "traffic and DNS services", mutate)
 
     # -------------------------------------------------------------------- wifi
 
@@ -1204,7 +1351,7 @@ def _deep_update(target: dict[str, Any], updates: dict[str, Any]) -> None:
             target[key] = value
 
 
-SECRET_KEYS = ("passphrase", "password", "password_hash", "secret", "psk",
+SECRET_KEYS = ("passphrase", "password", "password_hash", "secret", "psk", "api_key",
                "private_key", "totp_secret", "hash", "auth_secret", "acct_secret")
 
 
