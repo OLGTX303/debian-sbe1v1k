@@ -66,6 +66,13 @@ if you leave it unset, and everything else is derived:
 QSDK=/path/to/qsdk bash scripts/fetch-sources.sh
 ```
 
+When no QSDK tree is present, `fetch-sources.sh` automatically clones the
+Qualcomm QSDK source from CodeLinaro (`QSDK_REPO`), using `QSDK_REF` when set.
+If the repository requires access, configure Git credentials first. Cloning
+the source is only the first step: QSDK must still be configured and built to
+produce the kernel, firmware, `wpad`, `build_dir/` and `staging_dir/` outputs
+used by the Debian image.
+
 For a private QSDK archive, the same script can download and verify it before
 checking the tree. The archive must extract to a directory containing `qca/`:
 
@@ -79,9 +86,8 @@ bash scripts/fetch-sources.sh
 ```
 
 Credentials for a private URL are supplied through the machine's `curl`
-configuration or environment; they are not stored in this repository. The
-script never downloads Qualcomm sources from GitHub because QSDK is vendor
-licensed. Debian Bookworm is downloaded by `build-debian-rootfs.sh` via
+configuration or environment; they are not stored in this repository. Debian
+Bookworm is downloaded by `build-debian-rootfs.sh` via
 `MIRROR` and is verified by the normal debootstrap package checks.
 
 ## Building

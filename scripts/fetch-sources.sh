@@ -35,6 +35,7 @@ QSDK="${QSDK:-$WS/../qsdk}"
 # fetch-sources works on the tree itself, so QSDK is what it needs.
 QSDK_ROOT="$QSDK"
 DEBIAN_MIRROR="${MIRROR:-http://deb.debian.org/debian}"
+QSDK_REPO="${QSDK_REPO:-https://git.codelinaro.org/clo/qsdk.git}"
 
 download_qsdk() {
     local archive="$1" destination="$2" tmp expected actual
@@ -120,8 +121,21 @@ fi
 # Qualcomm does not publish QSDK through this repository. A private build can
 # provide a local archive or an authenticated URL. URL downloads require
 # QSDK_SHA256 so a changed vendor archive cannot silently change the driver ABI.
-if [[ ! -d "$QSDK_ROOT" && -n "${QSDK_ARCHIVE:-}" ]]; then
+if [[ ! -d "$QSDK/qca" && -n "${QSDK_ARCHIVE:-}" ]]; then
     download_qsdk "$QSDK_ARCHIVE" "$QSDK"
+fi
+
+if [[ ! -d "$QSDK/qca" && "${QSDK_AUTO_CLONE:-1}" == "1" ]]; then
+    command -v git >/dev/null || die "git is required to clone QSDK"
+    [[ ! -e "$QSDK" || -d "$QSDK" ]] || die "QSDK path exists but is not a directory: $QSDK"
+    mkdir -p "$(dirname "$QSDK")"
+    note "cloning QSDK from $QSDK_REPO"
+    if [[ -n "${QSDK_REF:-}" ]]; then
+        git clone --depth 1 --recurse-submodules --branch "$QSDK_REF" \
+            "$QSDK_REPO" "$QSDK"
+    else
+        git clone --depth 1 --recurse-submodules "$QSDK_REPO" "$QSDK"
+    fi
 fi
 
 note "checking the QSDK tree at $QSDK_ROOT"
@@ -130,8 +144,11 @@ if [[ ! -d "$QSDK_ROOT" ]]; then
 
 [!] No QSDK tree found at $QSDK_ROOT
 
-    Qualcomm's QSDK is not publicly downloadable and is not redistributed by
-    this project. Point QSDK_ROOT at your own tree, or place one there.
+    QSDK source is cloned from:
+      $QSDK_REPO
+    Authentication, if required, comes from your normal Git credential helper.
+    The clone supplies source; you still need to configure/build QSDK so its
+    build_dir/, staging_dir/, firmware and kernel-module outputs exist.
 
     The build reads exactly these four things from it:
 
