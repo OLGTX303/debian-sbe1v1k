@@ -37,7 +37,17 @@ note "enabling QSDK 6.6 Smart Queue modules"
     # This QSDK keeps its kconfig utility in scripts/config/ (a directory), not
     # at scripts/config like newer OpenWrt.  Replace the three package symbols
     # directly, then let `make defconfig` resolve every dependency.
-    for symbol in PACKAGE_kmod-sched-core PACKAGE_kmod-sched-cake PACKAGE_kmod-ifb; do
+    # kmod-qca-nss-ppe-vlan-mgr / -bridge-mgr teach PPE about Linux bridges and
+    # their VLANs. Without them ECM accelerates a flow that PPE cannot forward:
+    # measured on hardware, a LAN client's traffic reached ESTABLISHED in
+    # conntrack, nftables dropped nothing (drop counter 0), and the client read
+    # 0 bytes. The vendor image loads both (51-qca-nss-ppe-vlan-mgr,
+    # 52-qca-nss-ppe-bridge-mgr) and its acceleration works; our build had
+    # neither compiled at all. bridge-mgr depends on vlan-mgr, and this gateway
+    # always uses a VLAN-filtering bridge, so both are required.
+    for symbol in PACKAGE_kmod-sched-core PACKAGE_kmod-sched-cake PACKAGE_kmod-ifb \
+                  PACKAGE_kmod-qca-nss-ppe-vlan-mgr \
+                  PACKAGE_kmod-qca-nss-ppe-bridge-mgr; do
         sed -i -e "/^CONFIG_${symbol}=/d" -e "/^# CONFIG_${symbol} is not set$/d" .config
         printf 'CONFIG_%s=y\n' "$symbol" >> .config
     done
@@ -56,6 +66,15 @@ note "enabling QSDK 6.6 Smart Queue modules"
     # from a stale build (and then report sch_hfsc/sch_cake as missing).
     make -j"$jobs" target/linux/compile
     make -j"$jobs" package/kernel/linux/compile
+    # The PPE managers live in a feed package, so kernel/linux does not build
+    # them. Non-fatal: a tree without the nss feed still gets Smart Queues.
+    if [[ -d "$QSDK/qca/feeds/nss/clients/qca-nss-ae-clients" ]]; then
+        make -j"$jobs" package/qca/feeds/nss/clients/qca-nss-ae-clients/compile \
+            || make -j"$jobs" package/feeds/nss/qca-nss-ae-clients/compile \
+            || echo "[!] qca-nss-ae-clients failed to build; PPE offload stays unusable" >&2
+    else
+        echo "[!] qca-nss-ae-clients not in this tree; PPE offload stays unusable" >&2
+    fi
 )
 
 if [[ "${CONFIGURE_ONLY:-0}" == "1" ]]; then
@@ -67,7 +86,18 @@ module_root="$QSDK/build_dir/target-aarch64_cortex-a73+neon-vfpv4_musl/root-ipq9
 kernel_release_dir="$module_root/6.6.116+"
 package_root="$kernel_target/packages/ipkg-aarch64_cortex-a73_neon-vfpv4"
 mkdir -p "$kernel_release_dir"
-for package in kmod-sched-core kmod-sched-cake kmod-ifb; do
+for package in kmod-sched-core kmod-sched-cake kmod-ifb \
+               kmod-qca-nss-ppe-vlan-mgr kmod-qca-nss-ppe-bridge-mgr; do
+    # The PPE managers are optional: a tree without the nss feed still yields a
+    # working image, just without hardware offload. Skip rather than die.
+    case "$package" in
+        kmod-qca-nss-ppe-*)
+            [[ -d "$package_root/$package/lib/modules" ]] || {
+                echo "[!] $package not built; skipping" >&2
+                continue
+            }
+            ;;
+    esac
     package_modules="$package_root/$package/lib/modules"
     [[ -d "$package_modules" ]] || die "$package was built but its module payload is missing: $package_modules"
     while IFS= read -r -d '' source_module; do
