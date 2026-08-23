@@ -33,6 +33,22 @@ Verified on hardware, not just in tests:
 - **OTA** — `sbegw --ota-verify` / `--ota-apply`, which validate a sysupgrade
   image completely before writing anything.
 
+## Dashboard
+
+Connect a computer to the SBE1V1K LAN and open the local management dashboard:
+
+- [Open dashboard over HTTPS](https://192.168.2.1/)
+- [Open dashboard over HTTP](http://192.168.2.1/)
+
+The first connection shows the protected first-run setup screen. Create the
+local administrator there, then sign in to view the live Overview dashboard,
+radio status, clients, ports, WAN state, firewall, telemetry and OTA controls.
+The dashboard is served locally by the router and does not require cloud access.
+
+The live device at `192.168.2.1` currently reports `setup_required: true`; an
+authenticated dashboard screenshot will be added after first-run setup is
+completed on the device.
+
 ## Layout
 
 ```
