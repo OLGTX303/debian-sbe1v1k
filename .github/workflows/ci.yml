@@ -19,6 +19,12 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: Dependencies
+        # The control plane has no third-party runtime deps except this one:
+        # the controller inform path signs payloads. It is present on the build
+        # host, so its absence only showed up here.
+        run: python3 -m pip install --quiet cryptography
+
       - name: Shell syntax
         # These two become PID 1 and an early-boot unit on the device; a typo
         # in either costs a boot, so they are checked before anything else.
