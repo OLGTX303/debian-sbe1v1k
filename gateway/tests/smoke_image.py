@@ -330,8 +330,14 @@ check("the image pins iptables to the nft backend",
       "update-alternatives --set \"$_alt\"" in _bt and "-nft" in _bt,
       "third-party iptables rules would land in a second backend")
 check("the build fails if iptables is not on nft",
-      'iptables --version | grep -q "nf_tables"' in _bt,
+      "/etc/alternatives/$_alt" in _bt and "not the nft backend" in _bt,
       "a silent legacy fallback would ship")
+# The check must not invoke iptables: on the nft backend it opens a netfilter
+# netlink socket, which the qemu chroot does not have, so it fails even when
+# the alternative is correct. That false negative aborted a real build.
+check("the nft check does not run iptables inside the chroot",
+      'iptables --version | grep -q "nf_tables"' not in _bt,
+      "running iptables in the chroot fails with 'Protocol not supported'")
 check("the legacy netfilter modules are blacklisted",
       "blacklist ip_tables" in _bt and "sbe1v1k-single-netfilter.conf" in _bt,
       "legacy hooks would register alongside nft")

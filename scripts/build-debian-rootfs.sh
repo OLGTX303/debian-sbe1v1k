@@ -768,10 +768,18 @@ for _alt in iptables ip6tables arptables ebtables; do
         update-alternatives --set "$_alt" "/usr/sbin/${_alt}-nft" || true
     fi
 done
-iptables --version | grep -q "nf_tables" \
-    || { echo "ERROR: iptables is not on the nft backend: $(iptables --version)" >&2; exit 1; }
-ip6tables --version | grep -q "nf_tables" \
-    || { echo "ERROR: ip6tables is not on the nft backend" >&2; exit 1; }
+# Verify by reading the alternative link, NOT by running iptables. On the nft
+# backend `iptables --version` opens a netfilter netlink socket, which is not
+# available inside this qemu chroot -- it fails with "Failed to initialize nft:
+# Protocol not supported" even when the alternative is set correctly, and an
+# earlier version of this check aborted the build on that false negative.
+for _alt in iptables ip6tables; do
+    _tgt="$(readlink -f "/etc/alternatives/$_alt" 2>/dev/null || true)"
+    case "$_tgt" in
+        *-nft) : ;;
+        *) echo "ERROR: $_alt points at '$_tgt', not the nft backend" >&2; exit 1 ;;
+    esac
+done
 
 # Pointing the CLI at nft is not sufficient on its own. Measured on hardware:
 # after switching the alternatives, /proc/net/ip_tables_names still listed
