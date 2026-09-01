@@ -318,7 +318,25 @@ for name in ("pack-debian-squashfs.sh", "make-sysupgrade.sh"):
           P29 in body and not any("127926272" in l for l in assigns),
           "; ".join(assigns))
 
+# --- exactly one netfilter backend
+# This gateway programs nftables; third-party proxies drive iptables. If
+# iptables is wired to the legacy ip_tables engine, both run at once on the
+# same packets. Measured on hardware in that state, and a transparent proxy
+# that works on ordinary routers did not work here.
+import pathlib as _pl  # noqa: E402
+_bs = _pl.Path(__file__).resolve().parents[2] / "scripts" / "build-debian-rootfs.sh"
+_bt = _bs.read_text() if _bs.exists() else ""
+check("the image pins iptables to the nft backend",
+      "update-alternatives --set \"$_alt\"" in _bt and "-nft" in _bt,
+      "third-party iptables rules would land in a second backend")
+check("the build fails if iptables is not on nft",
+      'iptables --version | grep -q "nf_tables"' in _bt,
+      "a silent legacy fallback would ship")
+check("the legacy netfilter modules are blacklisted",
+      "blacklist ip_tables" in _bt and "sbe1v1k-single-netfilter.conf" in _bt,
+      "legacy hooks would register alongside nft")
+
 print(f"\n{len(PASSED)} passed, {len(FAILED)} failed")
 if FAILED:
     print("failed: " + ", ".join(FAILED))
-sys.exit(1 if FAILED else 0)
+import pathlib  # noqa: E402\nsys.exit(1 if FAILED else 0)

@@ -747,6 +747,55 @@ apt-get install -y --no-install-recommends \
 # matching libhtp2 is installed too; otherwise apt prefers Bookworm's older
 # library and rejects the DPI engine as an unsatisfied dependency.
 apt-get install -y -t bookworm-backports --no-install-recommends suricata
+
+# Pin iptables to the nftables backend, explicitly and in manual mode.
+#
+# This gateway programs netfilter through nftables. Third-party software does
+# not: ShellCrash, and most transparent proxies, drive iptables. If iptables is
+# wired to the LEGACY ip_tables engine, those rules land in a second, separate
+# netfilter backend running alongside the nft one -- two engines filtering the
+# same packets with no defined interaction. Measured on hardware in exactly
+# that state: `iptables v1.8.9 (legacy)` with ip_tables mangle/nat/filter live,
+# while sbegw's rules sat in nftables, and a transparent proxy that works on
+# ordinary routers did not work here.
+#
+# Every normal router has one namespace -- OpenWrt is nft-only, and Debian's
+# own alternatives system rates iptables-nft as "Best". Something on the device
+# had nonetheless selected legacy in manual mode, so relying on the default is
+# not enough; set it, and fail the build if the tools disagree afterwards.
+for _alt in iptables ip6tables arptables ebtables; do
+    if update-alternatives --list "$_alt" >/dev/null 2>&1; then
+        update-alternatives --set "$_alt" "/usr/sbin/${_alt}-nft" || true
+    fi
+done
+iptables --version | grep -q "nf_tables" \
+    || { echo "ERROR: iptables is not on the nft backend: $(iptables --version)" >&2; exit 1; }
+ip6tables --version | grep -q "nf_tables" \
+    || { echo "ERROR: ip6tables is not on the nft backend" >&2; exit 1; }
+
+# Pointing the CLI at nft is not sufficient on its own. Measured on hardware:
+# after switching the alternatives, /proc/net/ip_tables_names still listed
+# mangle, nat and filter, because the legacy kernel modules stay loaded with
+# their tables registered and their hooks live. That leaves two netfilter
+# engines filtering the same packets, which is the state a standard router is
+# never in. Keep the legacy modules out so there is exactly one backend.
+#
+# Nothing here needs them: Docker and every other consumer go through
+# /usr/sbin/iptables, which is now iptables-nft.
+install -d /etc/modprobe.d
+cat > /etc/modprobe.d/sbe1v1k-single-netfilter.conf <<'MODBLK'
+# One netfilter backend only: nftables. The legacy ip_tables engine would
+# otherwise register a second set of hooks alongside it.
+blacklist ip_tables
+blacklist ip6_tables
+blacklist iptable_nat
+blacklist iptable_mangle
+blacklist iptable_filter
+blacklist iptable_raw
+blacklist ip6table_nat
+blacklist ip6table_mangle
+blacklist ip6table_filter
+MODBLK
 # Docker's prerequisites were checked against this kernel before adding it:
 # cgroups v2 (the board mounts cgroup2fs), MEMCG, CGROUP_PIDS, NAMESPACES,
 # NET_NS, PID_NS, VETH, BRIDGE, OVERLAY_FS, NF_NAT and BRIDGE_NETFILTER are all
