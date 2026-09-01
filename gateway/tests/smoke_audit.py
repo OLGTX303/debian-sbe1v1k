@@ -1142,6 +1142,24 @@ check("a non-filtering bridge omits vlan_default_pvid",
       not any("vlan_default_pvid" in c for c in _br_cmds),
       str(_br_cmds))
 
+# --- NAT must keep endpoint-independent mapping
+# Plain masquerade lets nf_nat reuse the original source port, so one internal
+# (ip,port) keeps ONE external port across destinations -- what STUN/WebRTC,
+# consoles and P2P rely on. A "random"/"fully-random" flag looks like hardening
+# but gives every destination a different port and breaks NAT traversal.
+_nat_rs = _tun_nft.render(_tun_schema.default_config(), _tun_zi, {"wan1": "eth3"})
+_masq = [l.strip() for l in _nat_rs.splitlines() if "masquerade" in l]
+check("masquerade is not randomised (endpoint-independent mapping)",
+      not any("random" in l for l in _masq),
+      f"randomisation would break NAT traversal: {_masq}")
+check("there is a masquerade rule at all", any("oifname" in l for l in _masq),
+      str(_masq))
+# The hairpin rule must match the NETWORK, not the gateway host address.
+_hair = [l for l in _masq if "hairpin" in l]
+check("hairpin matches the network address, not the gateway host",
+      _hair and "192.168.2.0/24" in _hair[0] and "192.168.2.1/24" not in _hair[0],
+      str(_hair))
+
 print(f"\n{len(PASSED)} passed, {len(FAILED)} failed")
 if FAILED:
     print("failed: " + ", ".join(FAILED))

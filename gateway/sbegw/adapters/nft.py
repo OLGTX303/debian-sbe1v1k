@@ -9,6 +9,7 @@ half-open firewall.
 from __future__ import annotations
 
 import logging
+import ipaddress
 from typing import Any
 
 from ..util import ToolError, run, run_json, run_ok, write_atomic
@@ -377,6 +378,18 @@ def _render_nat_table(cfg: dict[str, Any], nat: dict[str, Any],
               "        type nat hook postrouting priority 100; policy accept;"]
     if nat.get("masquerade", True):
         for wan_id, iface in sorted(wan_interfaces.items()):
+            # No "random" or "fully-random" flag, deliberately. Plain masquerade
+            # lets nf_nat keep the original source port when nothing else claims
+            # it, so one internal (ip,port) keeps ONE external port across
+            # different destinations -- endpoint-independent mapping, which is
+            # what STUN, WebRTC, game consoles and P2P need to traverse NAT.
+            # Adding a randomisation flag reads like hardening but destroys
+            # that: every destination would get a different external port and
+            # NAT traversal breaks. Guarded by a test.
+            #
+            # Note this is mapping, not filtering. Linux has no
+            # endpoint-independent filtering, so this is not full-cone NAT and
+            # cannot be made so without an out-of-tree module.
             lines.append(f"        oifname \"{iface}\" counter masquerade "
                          f"comment \"masq {wan_id}\"")
     if nat.get("hairpin", True):
@@ -386,7 +399,14 @@ def _render_nat_table(cfg: dict[str, Any], nat: dict[str, Any],
             subnet = net.get("subnet")
             if not subnet:
                 continue
-            network = subnet.rsplit("/", 1)
+            # A network's "subnet" is the gateway address with a prefix
+            # (192.168.2.1/24), so emitting it verbatim asked nftables to match
+            # a host address carrying a /24 -- it only did the right thing
+            # because nft silently masks off the host bits. Say what we mean.
+            try:
+                subnet = str(ipaddress.ip_network(subnet, strict=False))
+            except ValueError:
+                continue
             lines.append(f"        ip saddr {subnet} ip daddr {subnet} "
                          f"ct status dnat counter masquerade "
                          f"comment \"hairpin {nid}\"")
