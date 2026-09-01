@@ -1108,6 +1108,40 @@ check("a zone denied the internet is denied the tunnel too",
 _last = [l.strip() for l in _tun_fwd.strip().splitlines() if l.strip()][-2]
 check("the policy drop is still last", _last == "counter drop", _last)
 
+# --- a VLAN-filtering bridge must still behave like an ordinary Linux bridge
+# for software that is not this control plane. With vlan_default_pvid 0 a
+# newly enslaved port gets no VLAN and the bridge drops its untagged frames,
+# so a container veth or tunnel attached by a third party is dead until
+# someone runs `bridge vlan add` by hand. Measured on hardware: pvid 0 could
+# not ping the gateway; pvid 1 worked with no extra config.
+from sbegw.adapters import rtnl as _br_rtnl  # noqa: E402
+_br_cmds = []
+_br_saved = _br_rtnl.run_ok
+_br_link = _br_rtnl.link
+try:
+    _br_rtnl.run_ok = lambda cmd, *a, **k: _br_cmds.append(cmd) or True
+    _br_rtnl.link = lambda n: None          # pretend the bridge is absent
+    _br_rtnl.ensure_bridge("br-lan", vlan_filtering=True)
+finally:
+    _br_rtnl.run_ok = _br_saved
+    _br_rtnl.link = _br_link
+_br_add = next((c for c in _br_cmds if "add" in c), [])
+check("a VLAN-filtering bridge gets a standard default pvid",
+      "vlan_default_pvid" in _br_add and "1" in _br_add,
+      f"third-party ports would be dropped: {_br_add}")
+# A non-filtering bridge must not carry the option at all.
+_br_cmds.clear()
+try:
+    _br_rtnl.run_ok = lambda cmd, *a, **k: _br_cmds.append(cmd) or True
+    _br_rtnl.link = lambda n: None
+    _br_rtnl.ensure_bridge("br-wan", vlan_filtering=False)
+finally:
+    _br_rtnl.run_ok = _br_saved
+    _br_rtnl.link = _br_link
+check("a non-filtering bridge omits vlan_default_pvid",
+      not any("vlan_default_pvid" in c for c in _br_cmds),
+      str(_br_cmds))
+
 print(f"\n{len(PASSED)} passed, {len(FAILED)} failed")
 if FAILED:
     print("failed: " + ", ".join(FAILED))

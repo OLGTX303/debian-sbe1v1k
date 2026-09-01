@@ -86,16 +86,33 @@ def set_mac(name: str, mac: str) -> bool:
 
 
 def ensure_bridge(name: str, *, vlan_filtering: bool = True,
-                  stp: bool = False) -> bool:
+                  stp: bool = False, default_pvid: int = 1) -> bool:
+    """Create or reconcile a bridge.
+
+    default_pvid is what makes this behave like an ordinary Linux bridge for
+    software that is not this control plane. A VLAN-filtering bridge created
+    with default_pvid 0 gives a newly enslaved port NO VLAN membership, so the
+    bridge silently discards its untagged frames -- anything a third party
+    attaches (a container veth, a tunnel, a test interface) is dead on arrival
+    and needs a manual `bridge vlan add` to work at all. Measured on hardware:
+    with pvid 0 a freshly added port could not even ping the gateway; with
+    pvid 1 it got "1 PVID Egress Untagged" automatically and worked.
+
+    Ports this control plane manages are given their VLANs explicitly
+    afterwards, so this only decides the fallback for ports it does not know
+    about. 1 is the kernel's own default.
+    """
+    args = ["vlan_filtering", "1" if vlan_filtering else "0",
+            "stp_state", "1" if stp else "0"]
+    # vlan_default_pvid is only meaningful on a VLAN-filtering bridge, and
+    # older kernels reject it on one that is not.
+    if vlan_filtering:
+        args += ["vlan_default_pvid", str(default_pvid)]
     if link(name) is None:
-        if not run_ok(["ip", "link", "add", "name", name, "type", "bridge",
-                       "vlan_filtering", "1" if vlan_filtering else "0",
-                       "stp_state", "1" if stp else "0"]):
+        if not run_ok(["ip", "link", "add", "name", name, "type", "bridge"] + args):
             return False
     else:
-        run_ok(["ip", "link", "set", "dev", name, "type", "bridge",
-                "vlan_filtering", "1" if vlan_filtering else "0",
-                "stp_state", "1" if stp else "0"])
+        run_ok(["ip", "link", "set", "dev", name, "type", "bridge"] + args)
     return set_up(name)
 
 
