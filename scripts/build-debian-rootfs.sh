@@ -775,9 +775,15 @@ done
 # earlier version of this check aborted the build on that false negative.
 for _alt in iptables ip6tables; do
     _tgt="$(readlink -f "/etc/alternatives/$_alt" 2>/dev/null || true)"
+    # readlink -f resolves the whole alternatives chain to the implementation
+    # binary, which for the nft backend is xtables-nft-multi -- NOT a name
+    # ending in "-nft". Match on the backend token and reject legacy explicitly;
+    # an earlier "*-nft" glob failed a build whose alternative was already right.
     case "$_tgt" in
-        *-nft) : ;;
-        *) echo "ERROR: $_alt points at '$_tgt', not the nft backend" >&2; exit 1 ;;
+        *legacy*) echo "ERROR: $_alt uses the legacy backend ($_tgt)" >&2; exit 1 ;;
+        *nft*)    : ;;
+        *) echo "ERROR: $_alt resolves to '$_tgt', which is neither nft nor legacy" >&2
+           exit 1 ;;
     esac
 done
 

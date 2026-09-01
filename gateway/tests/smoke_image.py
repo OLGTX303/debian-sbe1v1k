@@ -329,9 +329,14 @@ _bt = _bs.read_text() if _bs.exists() else ""
 check("the image pins iptables to the nft backend",
       "update-alternatives --set \"$_alt\"" in _bt and "-nft" in _bt,
       "third-party iptables rules would land in a second backend")
-check("the build fails if iptables is not on nft",
-      "/etc/alternatives/$_alt" in _bt and "not the nft backend" in _bt,
+check("the build fails if iptables is on the legacy backend",
+      "/etc/alternatives/$_alt" in _bt and "*legacy*)" in _bt,
       "a silent legacy fallback would ship")
+# readlink -f resolves to xtables-nft-multi, which does NOT end in "-nft".
+# A "*-nft" glob rejected a correctly configured image and failed a build.
+check("the matcher accepts xtables-nft-multi",
+      "*nft*)" in _bt and "*-nft)" not in _bt,
+      "matching only '*-nft' rejects the real resolved binary")
 # The check must not invoke iptables: on the nft backend it opens a netfilter
 # netlink socket, which the qemu chroot does not have, so it fails even when
 # the alternative is correct. That false negative aborted a real build.
