@@ -45,9 +45,17 @@ note "enabling QSDK 6.6 Smart Queue modules"
     # 52-qca-nss-ppe-bridge-mgr) and its acceleration works; our build had
     # neither compiled at all. bridge-mgr depends on vlan-mgr, and this gateway
     # always uses a VLAN-filtering bridge, so both are required.
+    # kmod-ipt-tproxy / kmod-ipt-socket give iptables the TPROXY target and the
+    # socket match. nftables already has both built in (nft_tproxy, nft_socket),
+    # but third-party transparent proxies -- ShellCrash among them -- drive
+    # iptables, and without these xtables extensions iptables reports
+    # "Extension TPROXY revision 0 not supported, missing kernel module" and
+    # TProxy mode simply cannot be configured. That leaves TUN mode as the only
+    # option, with no fallback when it misbehaves.
     for symbol in PACKAGE_kmod-sched-core PACKAGE_kmod-sched-cake PACKAGE_kmod-ifb \
                   PACKAGE_kmod-qca-nss-ppe-vlan-mgr \
-                  PACKAGE_kmod-qca-nss-ppe-bridge-mgr; do
+                  PACKAGE_kmod-qca-nss-ppe-bridge-mgr \
+                  PACKAGE_kmod-ipt-tproxy PACKAGE_kmod-ipt-socket; do
         sed -i -e "/^CONFIG_${symbol}=/d" -e "/^# CONFIG_${symbol} is not set$/d" .config
         printf 'CONFIG_%s=y\n' "$symbol" >> .config
     done
@@ -87,10 +95,17 @@ kernel_release_dir="$module_root/6.6.116+"
 package_root="$kernel_target/packages/ipkg-aarch64_cortex-a73_neon-vfpv4"
 mkdir -p "$kernel_release_dir"
 for package in kmod-sched-core kmod-sched-cake kmod-ifb \
-               kmod-qca-nss-ppe-vlan-mgr kmod-qca-nss-ppe-bridge-mgr; do
+               kmod-qca-nss-ppe-vlan-mgr kmod-qca-nss-ppe-bridge-mgr \
+               kmod-ipt-tproxy kmod-ipt-socket; do
     # The PPE managers are optional: a tree without the nss feed still yields a
     # working image, just without hardware offload. Skip rather than die.
     case "$package" in
+        kmod-ipt-*)
+            [[ -d "$package_root/$package/lib/modules" ]] || {
+                echo "[!] $package not built; iptables TPROXY unavailable" >&2
+                continue
+            }
+            ;;
         kmod-qca-nss-ppe-*)
             # These come from a feed package, whose ipkg payload lands under its
             # own build dir rather than the kernel target's packages/ tree. Its
