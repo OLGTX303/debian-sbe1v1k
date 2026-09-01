@@ -275,6 +275,8 @@ chmod 0644 "$ROOTFS/etc/docker/daemon.json"
 # firewall.hardware_offload; this drop-in covers the window before that.
 note "installing the ECM offload sysctl drop-in"
 install -d "$ROOTFS/etc/sysctl.d"
+install -m 0644 "$GATEWAY/deploy/sysctl/98-sbegw-ipq9574-performance.conf" \
+    "$ROOTFS/etc/sysctl.d/98-sbegw-ipq9574-performance.conf"
 install -m 0644 "$GATEWAY/deploy/sysctl/99-sbegw-offload.conf" \
     "$ROOTFS/etc/sysctl.d/99-sbegw-offload.conf"
 

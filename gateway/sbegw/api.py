@@ -324,9 +324,11 @@ class ApiService:
             return {"config": cfg.get("dpi", {}),
                     "status": {"running": False, "tool_available": False,
                                "error": "DPI service is unavailable", "flow_count": 0},
-                    "applications": [], "clients": []}
+                    "applications": [], "categories": [], "clients": [],
+                    "acceleration": self._snapshot().get("acceleration", {})}
         self.dpi.poll(cfg)
-        return self.dpi.summary(cfg)
+        return self.dpi.summary(cfg) | {
+            "acceleration": self._snapshot().get("acceleration", {})}
 
     def put_dpi(self, ctx) -> dict[str, Any]:
         body = ctx.json()
@@ -539,8 +541,10 @@ class ApiService:
                 "loss_percent": (primary or {}).get("loss_percent"),
             },
             "wans": wans,
-            "ports": [{k: p[k] for k in ("id", "name", "role", "link_up",
-                                         "speed_mbps", "duplex", "rates")}
+            "ports": [{k: p.get(k) for k in (
+                "id", "name", "role", "network", "enabled", "admin_up",
+                "oper_state", "link_up", "speed_mbps", "max_speed_mbps",
+                "duplex", "medium", "rates", "counters", "phy")}
                       for p in snapshot.get("ports", [])],
             "clients": {
                 "total": len([c for c in clients if c.get("online")]),

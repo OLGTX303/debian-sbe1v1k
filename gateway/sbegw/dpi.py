@@ -14,6 +14,7 @@ import os
 import signal
 import sqlite3
 import threading
+from collections import OrderedDict
 from typing import Any
 
 from .configd import ApplyResult
@@ -44,12 +45,61 @@ APP_MAP: dict[str, tuple[int, int, str]] = {
     "smb": (9, 110, "SMB"),
     "dcerpc": (9, 110, "RPC"),
     "bittorrent-dht": (1, 2, "BitTorrent"),
+    "dhcp": (9, 62, "DHCP"),
+    "ntp": (9, 63, "NTP"),
+    "rdp": (10, 7, "Remote Desktop"),
+    "mqtt": (14, 8, "MQTT"),
+    "modbus": (14, 9, "Modbus"),
+    "snmp": (9, 64, "SNMP"),
+    "sip": (7, 1, "SIP"),
+    "rtsp": (7, 2, "RTSP"),
+}
+
+# Domain classification complements Suricata's protocol parser. TLS and HTTP
+# often only identify a flow as "tls" or "http"; their SNI/Host metadata lets
+# the operator see the service without retaining a URL, payload, or DNS answer.
+# The IDs stay stable so UniFi inform accounting does not change across boots.
+SERVICE_MAP: tuple[tuple[tuple[str, ...], tuple[int, int, str, str]], ...] = (
+    (("youtube.com", "googlevideo.com", "youtu.be"), (6, 1001, "YouTube", "Streaming")),
+    (("netflix.com", "nflxvideo.net", "nflximg.net"), (6, 1002, "Netflix", "Streaming")),
+    (("spotify.com", "scdn.co"), (6, 1003, "Spotify", "Streaming")),
+    (("tiktok.com", "tiktokcdn.com", "byteoversea.com"), (18, 1010, "TikTok", "Social")),
+    (("facebook.com", "fbcdn.net", "facebook.net"), (18, 1011, "Facebook", "Social")),
+    (("instagram.com", "cdninstagram.com"), (18, 1012, "Instagram", "Social")),
+    (("whatsapp.com", "whatsapp.net"), (4, 1020, "WhatsApp", "Messaging")),
+    (("discord.com", "discord.gg", "discordapp.com"), (4, 1021, "Discord", "Messaging")),
+    (("zoom.us", "zoom.com"), (7, 1030, "Zoom", "Conferencing")),
+    (("teams.microsoft.com", "skype.com"), (7, 1031, "Microsoft Teams", "Conferencing")),
+    (("icloud.com", "apple-cloudkit.com"), (12, 1040, "iCloud", "Cloud")),
+    (("dropbox.com", "dropboxapi.com"), (12, 1041, "Dropbox", "Cloud")),
+    (("amazonaws.com", "cloudfront.net"), (12, 1042, "Amazon Web Services", "Cloud")),
+    (("github.com", "githubusercontent.com"), (13, 1050, "GitHub", "Web")),
+    (("steamcontent.com", "steampowered.com"), (8, 1060, "Steam", "Gaming")),
+    (("xboxlive.com",), (8, 1061, "Xbox Live", "Gaming")),
+)
+
+CATEGORY_NAMES = {
+    1: "Peer to peer", 3: "File transfer", 4: "Messaging", 5: "Email",
+    6: "Streaming", 7: "Conferencing", 8: "Gaming", 9: "Network services",
+    10: "Remote access", 12: "Cloud", 13: "Web", 14: "IoT", 18: "Social",
+    20: "Encrypted", 255: "Other",
 }
 
 
 def _app(protocol: str | None) -> tuple[int, int, str]:
     key = (protocol or "unknown").lower()
     return APP_MAP.get(key, (255, 65535, key.upper() if key != "unknown" else "Unknown"))
+
+
+def _service(hostname: str | None) -> tuple[str, int, int, str, str] | None:
+    host = (hostname or "").lower().rstrip(".")
+    if not host:
+        return None
+    for suffixes, (category, application, display, category_name) in SERVICE_MAP:
+        if any(host == suffix or host.endswith("." + suffix) for suffix in suffixes):
+            return (display.lower().replace(" ", "-"), category, application,
+                    display, category_name)
+    return None
 
 
 class DpiEngine:
@@ -60,6 +110,11 @@ class DpiEngine:
         self._offset = 0
         self._inode: int | None = None
         self._lock = threading.RLock()
+        self._flow_apps: OrderedDict[str, tuple[str, int, int, str, str]] = OrderedDict()
+        self._events_seen = 0
+        self._flows_accepted = 0
+        self._parse_errors = 0
+        self._last_event_at: float | None = None
         os.makedirs(state_dir, exist_ok=True)
         self._db = sqlite3.connect(os.path.join(state_dir, "dpi.db"),
                                    check_same_thread=False)
@@ -114,11 +169,17 @@ class DpiEngine:
             lines += [f"  - interface: {interface}",
                       f"    cluster-id: {90 + index}",
                       "    cluster-type: cluster_flow", "    defrag: yes",
-                      "    use-mmap: yes", "    tpacket-v3: yes"]
+                      "    use-mmap: yes", "    tpacket-v3: yes",
+                      # 8192 descriptors absorbs bursts without consuming the
+                      # 1 GiB appliance's RAM as an oversized capture ring.
+                      "    ring-size: 8192", "    buffer-size: 64535",
+                      "    checksum-checks: kernel"]
         lines += [
             "outputs:", "  - eve-log:", "      enabled: yes",
             "      filetype: regular", f"      filename: {EVE_PATH}",
             "      rotate-interval: day", "      types:", "        - flow",
+            "        - tls:", "            extended: yes",
+            "        - http:", "            extended: yes", "        - dns",
             "logging:", "  default-log-level: notice", "  outputs:",
             "    - console:", "        enabled: no",
         ]
@@ -194,7 +255,27 @@ class DpiEngine:
         return address
 
     def ingest(self, event: dict[str, Any], cfg: dict[str, Any]) -> bool:
-        if event.get("event_type") != "flow":
+        self._events_seen += 1
+        self._last_event_at = now()
+        event_type = event.get("event_type")
+        flow_id = str(event.get("flow_id") or "")
+        if event_type in ("tls", "http", "dns"):
+            hostname = None
+            if event_type == "tls":
+                hostname = (event.get("tls") or {}).get("sni")
+            elif event_type == "http":
+                hostname = (event.get("http") or {}).get("hostname")
+            else:
+                dns = event.get("dns") or {}
+                hostname = dns.get("rrname") or dns.get("query")
+            classified = _service(hostname)
+            if flow_id and classified:
+                self._flow_apps[flow_id] = classified
+                self._flow_apps.move_to_end(flow_id)
+                while len(self._flow_apps) > 32768:
+                    self._flow_apps.popitem(last=False)
+            return False
+        if event_type != "flow":
             return False
         try:
             src = ipaddress.ip_address(event["src_ip"])
@@ -221,8 +302,12 @@ class DpiEngine:
         else:
             client_ip, rx, tx = str(dst), to_server, to_client
             rxp, txp = pkts_server, pkts_client
-        protocol = str(event.get("app_proto") or event.get("proto") or "unknown").lower()
-        category, application, display = _app(protocol)
+        service = self._flow_apps.pop(flow_id, None) if flow_id else None
+        if service:
+            protocol, category, application, display, _category_name = service
+        else:
+            protocol = str(event.get("app_proto") or event.get("proto") or "unknown").lower()
+            category, application, display = _app(protocol)
         client = self._identity(client_ip)
         timestamp = now()
         bucket = int(timestamp // 3600) * 3600
@@ -238,6 +323,7 @@ class DpiEngine:
                 "tx_packets=tx_packets+excluded.tx_packets, last_seen=excluded.last_seen",
                 (bucket, client, client_ip, protocol, category, application, display,
                  rx, tx, rxp, txp, timestamp, timestamp))
+        self._flows_accepted += 1
         return True
 
     def poll(self, cfg: dict[str, Any], limit: int = 5000) -> int:
@@ -257,6 +343,7 @@ class DpiEngine:
                     try:
                         count += int(self.ingest(json.loads(line), cfg))
                     except json.JSONDecodeError:
+                        self._parse_errors += 1
                         continue
                 self._offset = fh.tell()
         except OSError as exc:
@@ -287,12 +374,21 @@ class DpiEngine:
         rows = self.rows()
         apps: dict[str, dict[str, Any]] = {}
         clients: dict[str, dict[str, Any]] = {}
+        categories: dict[int, dict[str, Any]] = {}
         for row in rows:
             app = apps.setdefault(row["protocol"], {
                 "protocol": row["protocol"], "name": row["display"],
-                "category": row["category"], "rx_bytes": 0, "tx_bytes": 0})
+                "category": row["category"],
+                "category_name": CATEGORY_NAMES.get(row["category"], "Other"),
+                "rx_bytes": 0, "tx_bytes": 0})
             app["rx_bytes"] += row["rx_bytes"]
             app["tx_bytes"] += row["tx_bytes"]
+            category = categories.setdefault(row["category"], {
+                "category": row["category"],
+                "name": CATEGORY_NAMES.get(row["category"], "Other"),
+                "rx_bytes": 0, "tx_bytes": 0})
+            category["rx_bytes"] += row["rx_bytes"]
+            category["tx_bytes"] += row["tx_bytes"]
             client = clients.setdefault(row["client"], {
                 "client": row["client"], "client_ip": row["client_ip"],
                 "rx_bytes": 0, "tx_bytes": 0})
@@ -300,12 +396,26 @@ class DpiEngine:
             client["tx_bytes"] += row["tx_bytes"]
         ordered = lambda values: sorted(values, key=lambda x: x["rx_bytes"] + x["tx_bytes"],
                                         reverse=True)
+        try:
+            eve_size = os.path.getsize(EVE_PATH)
+            eve_age = max(0, now() - os.path.getmtime(EVE_PATH))
+        except OSError:
+            eve_size, eve_age = 0, None
         return {
             "config": cfg.get("dpi", {}),
             "status": {"running": self._running(),
                        "tool_available": which("suricata") is not None,
-                       "error": self.last_error, "flow_count": len(rows)},
+                       "error": self.last_error, "flow_count": len(rows),
+                       "events_seen": self._events_seen,
+                       "flows_accepted": self._flows_accepted,
+                       "parse_errors": self._parse_errors,
+                       "last_event_at": self._last_event_at,
+                       "eve_age_seconds": round(eve_age, 1) if eve_age is not None else None,
+                       "eve_bytes": eve_size,
+                       "capture_interfaces": self._interfaces(cfg),
+                       "classifier": "Suricata 7 + TLS/HTTP domain metadata"},
             "applications": ordered(apps.values()),
+            "categories": ordered(categories.values()),
             "clients": ordered(clients.values()),
         }
 

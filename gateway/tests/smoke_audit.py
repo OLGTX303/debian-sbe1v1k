@@ -724,8 +724,16 @@ check("hardware offload defaults to off",
 
 _ecm9 = tempfile.mkdtemp(prefix="sbegw-ecm-")
 _saved_dir9 = _nd9.NetworkManager.ECM_DIR
+_saved_debug9 = _nd9.NetworkManager.ECM_DEBUG_DIR
 try:
     _nd9.NetworkManager.ECM_DIR = _ecm9
+    _nd9.NetworkManager.ECM_DEBUG_DIR = os.path.join(_ecm9, "debug")
+    os.makedirs(os.path.join(_nd9.NetworkManager.ECM_DEBUG_DIR,
+                             "ecm_classifier_default"))
+    _delay9 = os.path.join(_nd9.NetworkManager.ECM_DEBUG_DIR,
+                           "ecm_classifier_default", "accel_delay_pkts")
+    with open(_delay9, "w") as fh:
+        fh.write("0\n")
     for _f in ("front_end_ipv4_stop", "front_end_ipv6_stop"):
         with open(os.path.join(_ecm9, _f), "w") as fh:
             fh.write("0\n")
@@ -746,6 +754,10 @@ try:
           str(_knobs()))
     check("...and warns what enabling it costs",
           any("lose internet" in m for m in msgs), str(msgs))
+    msgs = _nd9.NetworkManager._apply_hw_offload(True, dpi_enabled=True)
+    check("DPI and PPE share a 25-packet classification window",
+          open(_delay9).read().strip() == "25" and
+          any("DPI identification" in m for m in msgs), str(msgs))
 
     # A board where ECM is not loaded has no knobs; that is the no-offload
     # state already, so it must be silent rather than an error.
@@ -755,7 +767,15 @@ try:
           str(_nd9.NetworkManager._apply_hw_offload(False)))
 finally:
     _nd9.NetworkManager.ECM_DIR = _saved_dir9
+    _nd9.NetworkManager.ECM_DEBUG_DIR = _saved_debug9
     _sh9.rmtree(_ecm9, ignore_errors=True)
+
+_perf9 = os.path.join(os.path.dirname(__file__), "..", "deploy", "sysctl",
+                      "98-sbegw-ipq9574-performance.conf")
+_perf9_text = open(_perf9).read()
+check("IPQ9574 host datapath uses the supplied vendor 10 GbE sizing",
+      "net.core.netdev_max_backlog = 100000" in _perf9_text and
+      "net.netfilter.nf_conntrack_max = 131072" in _perf9_text)
 
 
 print("\n--- the WAN must follow the port role ---")
@@ -1056,6 +1076,37 @@ check("no foreign table is deleted",
       not any(l.startswith("delete table") and "sbegw" not in l
               for l in _rs2.splitlines()),
       str([l for l in _rs2.splitlines() if l.startswith("delete table")]))
+
+# --- third-party tunnel egress (ShellCrash utun, WireGuard, Tailscale)
+# A tunnel interface belongs to no zone. Every accept in the forward chain is
+# keyed on oifname @zone_<dst>, so without an explicit rule a LAN client routed
+# into a tunnel matches nothing and hits the policy drop: reachable gateway,
+# unreachable internet, and the tun reads RX 0 because the packet dies before
+# delivery. Reported from the field with ShellCrash.
+from sbegw import schema as _tun_schema  # noqa: E402
+from sbegw.adapters import nft as _tun_nft  # noqa: E402
+_tun_cfg = _tun_schema.default_config()
+_tun_zi = {"lan": ['"br-lan"'], "wan": ['"eth3"'], "guest": [], "iot": [],
+           "containers": []}
+_tun_rs = _tun_nft.render(_tun_cfg, _tun_zi, {"wan1": "eth3"})
+_tun_fwd = _tun_rs.split("chain forward")[1].split("chain output")[0]
+check("a LAN client may egress via a ShellCrash utun",
+      'iifname @zone_lan oifname "utun*" counter accept' in _tun_fwd,
+      "LAN->tunnel would hit the forward policy drop")
+check("wildcards are used so a later-created tun is still covered",
+      '"utun*"' in _tun_fwd and '"wg*"' in _tun_fwd,
+      "an exact name would miss a tunnel created after apply")
+# The tunnel must not become a way around a zone's internet policy.
+_deny = _tun_schema.default_config()
+_deny["firewall"]["default_policies"]["guest->wan"] = "drop"
+_deny_fwd = _tun_nft.render(_deny, _tun_zi, {"wan1": "eth3"}).split(
+    "chain forward")[1].split("chain output")[0]
+check("a zone denied the internet is denied the tunnel too",
+      'iifname @zone_guest oifname "utun*" counter drop' in _deny_fwd,
+      "guest->wan=drop must not be bypassable via a tunnel")
+# The catch-all drop must still be the last thing in the chain.
+_last = [l.strip() for l in _tun_fwd.strip().splitlines() if l.strip()][-2]
+check("the policy drop is still last", _last == "counter drop", _last)
 
 print(f"\n{len(PASSED)} passed, {len(FAILED)} failed")
 if FAILED:

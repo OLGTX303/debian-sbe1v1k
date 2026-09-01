@@ -76,16 +76,21 @@ dnsmasq validates the generated file before the live process is restarted.
 
 ## DPI integration
 
-When enabled, `DpiEngine` renders a private Suricata AF_PACKET configuration for
-`br-lan` and its VLAN interfaces. Only EVE flow records are enabled. The gateway
-aggregates application protocol, byte and packet totals per LAN client in a
-bounded SQLite database; it does not retain packet payloads. Local API/UI reads
-return the same totals used to build the legacy `dpi-stats` inform field.
+When enabled, `DpiEngine` renders a private, bounded-ring Suricata AF_PACKET
+configuration for `br-lan` and its VLAN interfaces. EVE flow, TLS, HTTP and DNS
+metadata refine generic encrypted flows into common services. The gateway
+aggregates application/category, byte and packet totals per LAN client in a
+bounded SQLite database; it does not retain packet payloads, URLs or DNS
+answers. Local API/UI reads return the same totals used to build the legacy
+`dpi-stats` inform field, plus capture-health counters.
 
 This is application-aware accounting, not IDS/IPS. Hardware flow offload may
 bypass passive inspection, so validation raises a visible warning if both are
-requested. Failure to start Suricata raises `DPI_FAILED`, but cannot roll back a
-working LAN because DPI is observational rather than forwarding-critical.
+requested. If both are explicitly enabled, ECM's vendor-derived 25-packet delay
+gives Suricata an identification window before PPE acceleration; the UI still
+marks byte accounting as partial. Failure to start Suricata raises `DPI_FAILED`,
+but cannot roll back a working LAN because DPI is observational rather than
+forwarding-critical.
 
 ## UniFi Network interoperability
 

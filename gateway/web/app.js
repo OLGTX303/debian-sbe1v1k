@@ -579,8 +579,10 @@ pages.dashboard = async (root) => {
             `Load ${(sys.load || []).map((n) => n.toFixed(2)).join(' · ')} · ${sys.cores || '?'} cores`)))),
 
     h('div', { class: 'card mt' },
-      h('header', {}, h('h2', {}, 'Ports')),
-      h('div', { class: 'body tight table-wrap' }, portsTable(d.ports || [], true))),
+      h('header', {}, h('h2', {}, 'Gateway ports'),
+        h('div', { class: 'spacer' }),
+        h('button', { class: 'sm ghost', onclick: () => go('ports') }, 'Manage ports')),
+      h('div', { class: 'body' }, portMap(d.ports || []))),
 
     radioCards(d.wifi?.radios || [], d.wifi?.mlds || []),
     accelerationCard(d.acceleration || {}),
@@ -712,6 +714,61 @@ function mldCard(mld) {
 }
 
 /* ------------------------------------------------------------------ ports */
+
+function portHealth(port) {
+  if (!port.enabled || port.role === 'disabled' || port.admin_up === false) return 'disabled';
+  if (!port.link_up) return 'down';
+  const counters = port.counters || {};
+  const errors = Number(counters.rx_errors || 0) + Number(counters.tx_errors || 0)
+    + Number(counters.crc_errors || 0) + Number(counters.rx_dropped || 0)
+    + Number(counters.tx_dropped || 0);
+  return errors ? 'issue' : 'up';
+}
+
+function portJack() {
+  return h('span', { class: 'port-jack', 'aria-hidden': 'true' },
+    h('span', { class: 'jack-pins' }, [0, 1, 2, 3, 4, 5, 6, 7].map(() => h('i'))),
+    h('span', { class: 'jack-mouth' }));
+}
+
+function portMap(ports) {
+  if (!ports.length) return h('div', { class: 'empty' }, 'No physical ports discovered.');
+  const up = ports.filter((port) => portHealth(port) === 'up').length;
+  return h('div', { class: 'port-map' },
+    h('div', { class: 'port-appliance' },
+      h('div', { class: 'appliance-label' },
+        h('span', { class: 'device-led on' }),
+        h('div', {}, h('b', {}, 'SBE1V1K'),
+          h('span', {}, `${up} of ${ports.length} links active`))),
+      h('div', { class: 'port-bank' }, ports.map((port, index) => {
+        const health = portHealth(port);
+        const role = port.role || 'lan';
+        const errors = Number(port.counters?.rx_errors || 0)
+          + Number(port.counters?.tx_errors || 0) + Number(port.counters?.crc_errors || 0);
+        const title = `${port.name || port.id}: ${health === 'up' ? fmtSpeed(port.speed_mbps) : health}`
+          + ` · ↓ ${fmtBits(port.rates?.rx_bps)} · ↑ ${fmtBits(port.rates?.tx_bps)}`;
+        return h('button', {
+          class: `port-face ${health} ${role}`, title,
+          'aria-label': title, onclick: () => go('ports'),
+        },
+        h('span', { class: 'port-number' }, String(index + 1)),
+        portJack(),
+        h('span', { class: 'port-led' }),
+        h('span', { class: 'port-role' }, role.toUpperCase()),
+        h('span', { class: 'port-name' }, port.name || port.id),
+        h('b', { class: 'port-speed' }, health === 'up' ? fmtSpeed(port.speed_mbps)
+          : health === 'disabled' ? 'Disabled' : 'Disconnected'),
+        h('span', { class: 'port-rate' }, health === 'up'
+          ? `↓ ${fmtBits(port.rates?.rx_bps)}  ↑ ${fmtBits(port.rates?.tx_bps)}` : '—'),
+        errors ? h('span', { class: 'port-errors' }, `${errors} errors`) : null);
+      }))),
+    h('div', { class: 'port-legend' },
+      h('span', {}, h('i', { class: 'legend-dot up' }), 'Link up'),
+      h('span', {}, h('i', { class: 'legend-dot wan' }), 'WAN'),
+      h('span', {}, h('i', { class: 'legend-dot down' }), 'Disconnected'),
+      h('span', {}, h('i', { class: 'legend-dot issue' }), 'Errors'),
+      h('span', { class: 'port-map-note' }, 'Live link, negotiated speed and traffic')));
+}
 
 function portsTable(ports, compact) {
   if (!ports.length) return h('div', { class: 'empty' }, 'No ports discovered.');
@@ -1137,7 +1194,9 @@ pages.dpi = async (root) => {
   const cfg = data.config || {};
   const status = data.status || {};
   const applications = data.applications || [];
+  const categories = data.categories || [];
   const clients = data.clients || [];
+  const acceleration = data.acceleration || {};
   const rxBytes = applications.reduce((sum, app) => sum + Number(app.rx_bytes || 0), 0);
   const txBytes = applications.reduce((sum, app) => sum + Number(app.tx_bytes || 0), 0);
   const totalBytes = rxBytes + txBytes;
@@ -1160,8 +1219,15 @@ pages.dpi = async (root) => {
   root.append(
     pageLead('Deep Packet Inspection',
       'See which applications and clients are using the connection. DPI records flow metadata and byte counts; payloads are never stored.', [state]),
-    status.error ? h('div', { class: 'banner bad' }, icon('error', 15, 'ico'),
-      h('div', {}, status.error)) : null,
+    ...(status.error ? [h('div', { class: 'banner bad' }, icon('error', 15, 'ico'),
+      h('div', {}, status.error))] : []),
+    ...(cfg.enabled && acceleration.offload_enabled
+      ? [h('div', { class: 'banner warn' }, icon('warn', 15, 'ico'),
+          h('div', {}, h('b', {}, 'Partial visibility while hardware offload is active. '),
+            acceleration.dpi_observation_window
+              ? `ECM keeps the first ${acceleration.accel_delay_packets} packets in the host path for classification; later PPE bytes may bypass accounting.`
+              : 'PPE can bypass Suricata after a flow is accelerated. Disable offload when exact byte accounting is required.'))]
+      : []),
 
     h('div', { class: 'grid kpi-grid' },
       statCard('Identified traffic', fmtBytes(totalBytes), {
@@ -1171,7 +1237,15 @@ pages.dpi = async (root) => {
       statCard('Active clients', clients.length, {
         hint: `${clients.length} with identified traffic` }),
       statCard('DPI engine', status.running ? 'Running' : cfg.enabled ? 'Stopped' : 'Off', {
-        hint: status.tool_available ? 'Suricata 7 · flow metadata only' : 'Suricata is unavailable' })),
+        hint: status.tool_available ? status.classifier || 'Suricata 7 · flow metadata only' : 'Suricata is unavailable' })),
+
+    h('div', { class: 'dpi-health' },
+      h('span', {}, h('b', {}, 'Capture'), ` ${(status.capture_interfaces || []).join(', ') || '—'}`),
+      h('span', {}, h('b', {}, 'Accepted flows'), ` ${status.flows_accepted ?? 0}`),
+      h('span', {}, h('b', {}, 'Metadata events'), ` ${status.events_seen ?? 0}`),
+      h('span', { class: status.parse_errors ? 'bad-text' : '' },
+        h('b', {}, 'Parse errors'), ` ${status.parse_errors ?? 0}`),
+      h('span', {}, h('b', {}, 'EVE stream'), ` ${fmtBytes(status.eve_bytes || 0)}`)),
 
     h('div', { class: 'card mt dpi-settings' },
       h('div', { class: 'body' },
@@ -1199,7 +1273,8 @@ pages.dpi = async (root) => {
               h('div', { class: 'traffic-name' },
                 h('span', { class: 'app-mark' }, (app.name || '?').slice(0, 1).toUpperCase()),
                 h('div', {}, h('b', {}, app.name),
-                  h('span', { class: 'mono' }, app.protocol))),
+                  h('span', {}, `${app.category_name || 'Other'} · `,
+                    h('span', { class: 'mono' }, app.protocol)))),
               h('div', {}, h('b', {}, fmtBytes(bytes)),
                 h('span', { class: 'traffic-split' },
                   `↓ ${fmtBytes(app.rx_bytes)} · ↑ ${fmtBytes(app.tx_bytes)}`)),
@@ -1207,6 +1282,16 @@ pages.dpi = async (root) => {
                 h('div', { class: 'bar' }, h('i', { style: `width:${share}%` }))),
             ];
           }, 'No classified applications yet. Enable DPI and generate traffic.')),
+      tableCard('Categories', h('span', { class: 'header-note' },
+        `${categories.length} active`),
+        dataTable(['Category', ['Traffic', { num: true }], 'Share'],
+          categories, (category) => {
+            const bytes = Number(category.rx_bytes || 0) + Number(category.tx_bytes || 0);
+            const share = totalBytes ? Math.round(bytes * 100 / totalBytes) : 0;
+            return [h('b', {}, category.name), fmtBytes(bytes),
+              h('div', { class: 'share-cell' }, h('b', {}, `${share}%`),
+                h('div', { class: 'bar' }, h('i', { style: `width:${share}%` })))];
+          }, 'No traffic categories yet.')),
       tableCard('Clients', h('span', { class: 'header-note' },
         `${clients.length} active`),
         dataTable(['Client', ['Traffic', { num: true }], ['Download', { num: true }],

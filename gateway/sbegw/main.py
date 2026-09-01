@@ -241,8 +241,10 @@ class Gateway:
                     "ts": snapshot["ts"],
                     "system": snapshot["system"],
                     "wans": snapshot["wans"],
-                    "ports": [{k: p[k] for k in
-                               ("id", "name", "link_up", "speed_mbps", "rates")}
+                    "ports": [{k: p.get(k) for k in
+                               ("id", "name", "role", "network", "enabled",
+                                "admin_up", "link_up", "speed_mbps",
+                                "max_speed_mbps", "rates", "counters")}
                               for p in snapshot["ports"]],
                     "wifi": {
                         "radios": [{k: r.get(k) for k in

@@ -150,6 +150,14 @@ def default_config() -> dict[str, Any]:
             # Qualcomm ECM offload breaks client forwarding on this board; see
             # _validate_firewall for the measurements.
             "hardware_offload": False,
+            # Interfaces created by a third-party tunnel or proxy (ShellCrash's
+            # utun, WireGuard, Tailscale) belong to no zone, so a LAN client
+            # routed into one matched no zone pair and hit the forward policy
+            # drop: the client could reach the gateway but not the internet, and
+            # the tun showed RX 0 because packets died before delivery. These
+            # patterns are treated as WAN egress. They are nft wildcards, so a
+            # tunnel that appears after the ruleset is applied is still covered.
+            "tunnel_interfaces": ["tun*", "utun*", "wg*", "tailscale*"],
             "default_policies": {
                 "lan->wan": "allow", "lan->gateway": "allow", "lan->lan": "allow",
                 "guest->wan": "allow", "guest->lan": "drop", "guest->gateway": "reject",
@@ -638,6 +646,17 @@ def _validate_firewall(fw: dict[str, Any], cfg: dict[str, Any]) -> None:
     # a router where nothing reaches the internet. Turn it on to measure the
     # difference, and expect client traffic to stop.
     v_bool(fw.setdefault("hardware_offload", False), "firewall.hardware_offload")
+    tunnels = fw.setdefault("tunnel_interfaces", ["tun*", "utun*", "wg*", "tailscale*"])
+    _need(tunnels, "firewall.tunnel_interfaces", list, "a list of interface patterns")
+    for i, pattern in enumerate(tunnels):
+        base = f"firewall.tunnel_interfaces[{i}]"
+        _need(pattern, base, str, "an interface name or nft wildcard")
+        # A bare "*" would make every egress interface a tunnel and silently
+        # defeat the zone policy, which is the opposite of what this is for.
+        if not pattern or pattern == "*":
+            raise ValidationError(base, "must name an interface or prefix, not '*'")
+        if '"' in pattern:
+            raise ValidationError(base, "must not contain a quote character")
 
     for key, action in fw.setdefault("default_policies", {}).items():
         if "->" not in key:

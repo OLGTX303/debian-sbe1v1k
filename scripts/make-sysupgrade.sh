@@ -137,6 +137,8 @@ tar -C "$STAGE" --sort=name --owner=0 --group=0 --numeric-owner \
 # fwtool -I embeds the JSON so sysupgrade can check the image is for this board.
 FWTOOL="${FWTOOL:-$(command -v fwtool || true)}"
 for candidate in \
+    "$WS/../qsdk14-work-ucgf/qsdk/staging_dir/host/bin/fwtool" \
+    "$WS/../qsdk/staging_dir/host/bin/fwtool" \
     "$WS/../openwrt-sbe1v1k/staging_dir/host/bin/fwtool" \
     "$WS/../yintaomu-SBE1V1K-OpenWrt/staging_dir/host/bin/fwtool"; do
     [ -n "$FWTOOL" ] && break

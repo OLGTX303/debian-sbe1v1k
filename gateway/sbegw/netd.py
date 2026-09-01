@@ -187,9 +187,10 @@ class NetworkManager:
     # Overridable so tests can point at a temporary directory instead of
     # monkeypatching os.path.exists and open().
     ECM_DIR = "/proc/sys/net/ecm"
+    ECM_DEBUG_DIR = "/sys/kernel/debug/ecm"
 
     @classmethod
-    def _apply_hw_offload(cls, enabled: bool) -> list[str]:
+    def _apply_hw_offload(cls, enabled: bool, dpi_enabled: bool = False) -> list[str]:
         """Enable or stop Qualcomm ECM's accelerated forwarding front ends.
 
         Absent knobs mean the ECM modules are not loaded, which is itself the
@@ -211,8 +212,24 @@ class NetworkManager:
         if not applied:
             return []
         if enabled:
-            return ["hardware offload (ECM) enabled — if clients lose internet "
-                    "while the gateway stays online, this is why"]
+            messages = ["hardware offload (ECM) enabled — if clients lose internet "
+                        "while the gateway stays online, this is why"]
+            # UCGF delays acceleration for the first 25 packets so its DPI
+            # classifier can identify the session before PPE takes it out of
+            # the host path. Apply the same capability-oriented policy to the
+            # open classifier when both features are explicitly enabled.
+            delay_path = os.path.join(cls.ECM_DEBUG_DIR,
+                                      "ecm_classifier_default", "accel_delay_pkts")
+            if os.path.exists(delay_path):
+                try:
+                    with open(delay_path, "w") as fh:
+                        fh.write("25\n" if dpi_enabled else "0\n")
+                    messages.append("ECM acceleration delay set to "
+                                    f"{25 if dpi_enabled else 0} packets"
+                                    + (" for DPI identification" if dpi_enabled else ""))
+                except OSError as exc:
+                    messages.append(f"could not set ECM DPI observation window: {exc}")
+            return messages
         return ["hardware offload (ECM) stopped so forwarding works"]
 
     # Roles as they were when this boot's first apply ran. On tmpfs, so it
@@ -288,7 +305,8 @@ class NetworkManager:
         # are not necessarily loaded when systemd-sysctl runs, and this re-runs
         # on every config apply.
         messages += self._apply_hw_offload(
-            bool(cfg.get("firewall", {}).get("hardware_offload", False)))
+            bool(cfg.get("firewall", {}).get("hardware_offload", False)),
+            bool(cfg.get("dpi", {}).get("enabled", False)))
 
         # --- LAN port membership and PVIDs
         lan_ports = [p for p, cfgp in ports.items()

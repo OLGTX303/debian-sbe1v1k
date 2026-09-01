@@ -41,7 +41,8 @@ try:
     schema.validate(cfg)
     dpi = DpiEngine(state, Clients())
 
-    event = {"event_type": "flow", "src_ip": "192.168.2.44",
+    event = {"event_type": "flow", "flow_id": 100,
+             "src_ip": "192.168.2.44",
              "dest_ip": "203.0.113.8", "app_proto": "tls",
              "flow": {"bytes_toserver": 1200, "bytes_toclient": 8400,
                       "pkts_toserver": 8, "pkts_toclient": 12}}
@@ -62,6 +63,28 @@ try:
     check("Suricata listens on the LAN bridge and VLAN",
           "interface: br-lan\n" in rendered and
           "interface: br-lan.20\n" in rendered)
+    check("capture config includes domain metadata and a bounded AF_PACKET ring",
+          "- tls:" in rendered and "- http:" in rendered and
+          "ring-size: 8192" in rendered)
+
+    # TLS SNI arrives before the terminal flow event. It should refine generic
+    # TLS into a useful service without storing a URL or packet payload.
+    dpi.ingest({"event_type": "tls", "flow_id": 101,
+                "tls": {"sni": "r4---sn.googlevideo.com"}}, cfg)
+    service_flow = {**event, "flow_id": 101,
+                    "flow": {"bytes_toserver": 50, "bytes_toclient": 950,
+                             "pkts_toserver": 1, "pkts_toclient": 2}}
+    check("TLS metadata classifies a service flow", dpi.ingest(service_flow, cfg))
+    service_summary = dpi.summary(cfg)
+    youtube = next((row for row in service_summary["applications"]
+                    if row["name"] == "YouTube"), None)
+    check("DPI reports service and category names",
+          youtube is not None and youtube["category_name"] == "Streaming",
+          str(service_summary["applications"]))
+    check("DPI exposes capture health counters",
+          service_summary["status"]["events_seen"] >= 3 and
+          service_summary["status"]["flows_accepted"] >= 2 and
+          service_summary["categories"], str(service_summary["status"]))
 
     payload = {"_type": "setparam", "mgmt_cfg": "authkey=001122\ncfgversion=7"}
     iv = bytes(range(16))

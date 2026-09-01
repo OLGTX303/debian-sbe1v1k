@@ -25,6 +25,7 @@ EDMA_PATHS = ("/sys/kernel/debug/edma", "/sys/kernel/debug/qca-nss-drv/edma",
 PPEDS_PATHS = ("/sys/kernel/debug/ppe_ds", "/sys/kernel/debug/qca-nss-ppe/ppe_ds",
                "/sys/kernel/debug/ath12k/ppeds")
 SSDK_PATHS = ("/sys/ssdk", "/proc/qca_ssdk", "/sys/kernel/debug/ssdk")
+ECM_PATH = "/sys/kernel/debug/ecm"
 
 
 def _first_existing(paths: tuple[str, ...]) -> str | None:
@@ -65,9 +66,28 @@ def acceleration() -> dict[str, Any]:
     if ppeds is None and modules["ath12k"]:
         reasons.append("PPEDS interface not present: Wi-Fi frames take the host path")
 
-    # ECM front-end mode tells us whether offload is actually armed.
-    ecm_state = read_text("/sys/kernel/debug/ecm/ecm_nss_ipv4/stop", "").strip()
-    offload_enabled = modules["ecm"] and modules["qca_nss_drv"] and ecm_state != "1"
+    # Newer ECM exposes global front-end stop files; older releases expose the
+    # same values through sysctl. Checking an engine-specific `stop` file alone
+    # made an explicitly disabled datapath look active on IPQ9574.
+    stops = []
+    for path in (
+        f"{ECM_PATH}/front_end_ipv4_stop", f"{ECM_PATH}/front_end_ipv6_stop",
+        "/proc/sys/net/ecm/front_end_ipv4_stop", "/proc/sys/net/ecm/front_end_ipv6_stop",
+    ):
+        value = read_int(path)
+        if value is not None:
+            stops.append(value)
+    offload_enabled = (modules["ecm"] and modules["qca_nss_drv"] and
+                       bool(stops) and any(value == 0 for value in stops))
+
+    engine = "software"
+    for candidate in ("ppe", "nss", "sfe"):
+        if os.path.isdir(f"{ECM_PATH}/ecm_{candidate}_ipv4"):
+            engine = candidate
+            break
+    delay = read_int(f"{ECM_PATH}/ecm_classifier_default/accel_delay_pkts")
+    common_stats = _named_counters(
+        "/sys/kernel/debug/qca-nss-ppe/stats/common_stats")
 
     return {
         "nss": {"present": nss is not None, "path": nss,
@@ -82,6 +102,10 @@ def acceleration() -> dict[str, Any]:
         "hardware_nat": offload_enabled,
         "hardware_routing": offload_enabled,
         "offload_enabled": offload_enabled,
+        "engine": engine,
+        "accel_delay_packets": delay,
+        "dpi_observation_window": bool(delay and delay > 0),
+        "ppe_counters": common_stats,
         "fallback_reasons": reasons,
     }
 
@@ -90,16 +114,29 @@ def flow_statistics() -> dict[str, Any]:
     """Offloaded vs software flow counts, when the platform reports them."""
     stats: dict[str, Any] = {"accelerated": None, "software": None, "source": None}
 
-    # ECM keeps a connection count that reflects accelerated flows.
-    for path, key in (
-        ("/sys/kernel/debug/ecm/ecm_db/connection_count", "accelerated"),
-        ("/proc/net/nss/ipv4/connections", "accelerated"),
-    ):
-        value = read_int(path)
-        if value is not None:
-            stats[key] = value
-            stats["source"] = path
+    # Each ECM front end publishes the number currently accelerated. Sum IPv4
+    # and IPv6 for the selected engine; the database connection_count is only
+    # the number ECM knows about and must not be presented as hardware flows.
+    accelerated = 0
+    sources = []
+    for engine in ("ppe", "nss", "sfe"):
+        values = []
+        for family in ("ipv4", "ipv6"):
+            path = f"{ECM_PATH}/ecm_{engine}_{family}/accelerated_count"
+            value = read_int(path)
+            if value is not None:
+                values.append(value)
+                sources.append(path)
+        if values:
+            accelerated = sum(values)
+            stats["accelerated"] = accelerated
+            stats["source"] = ",".join(sources)
+            stats["engine"] = engine
             break
+
+    managed = read_int(f"{ECM_PATH}/ecm_db/connection_count")
+    if managed is not None:
+        stats["managed"] = managed
 
     total = conntrack_count()
     if total is not None:
@@ -107,6 +144,21 @@ def flow_statistics() -> dict[str, Any]:
             stats["software"] = max(0, total - stats["accelerated"])
         stats["total"] = total
     return stats
+
+
+def _named_counters(path: str, limit: int = 64) -> dict[str, int]:
+    """Parse Qualcomm debugfs `name = value` / `name: value` counters safely."""
+    counters: dict[str, int] = {}
+    for line in read_text(path).splitlines():
+        match = re.match(r"\s*([A-Za-z][A-Za-z0-9_ ./-]{0,80}?)\s*[:=]\s*(\d+)\s*$", line)
+        if not match:
+            continue
+        key = re.sub(r"[^a-z0-9]+", "_", match.group(1).lower()).strip("_")
+        if key and key not in counters:
+            counters[key] = int(match.group(2))
+        if len(counters) >= limit:
+            break
+    return counters
 
 
 def conntrack_count() -> int | None:

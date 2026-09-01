@@ -257,6 +257,27 @@ def _render_forward_chain(cfg: dict[str, Any], fw: dict[str, Any],
         lines.append(f"        iifname @zone_{src} oifname @zone_{dst} "
                      f"counter {verdict} comment \"{key}\"")
 
+    # A third-party tunnel (ShellCrash's utun, WireGuard, Tailscale) creates an
+    # interface this config never names, so it lands in no zone. Every accept
+    # above is keyed on oifname @zone_<dst>, so a LAN client routed into the
+    # tunnel matched nothing and fell through to the drop below: it could reach
+    # the gateway, could not reach the internet, and the tun read RX 0 because
+    # the packet never survived to be delivered. The router itself was fine
+    # throughout -- that path is the output chain, which is policy accept.
+    #
+    # Treat a tunnel as WAN egress and reuse the zone's existing ->wan verdict
+    # rather than inventing a new permission, so a zone denied the internet
+    # cannot reach it through a tunnel either. Replies come back on the
+    # established,related rule at the top, so no inbound rule is needed.
+    for pattern in fw.get("tunnel_interfaces", []) or []:
+        for key, action in sorted(policies.items()):
+            src, _, dst = key.partition("->")
+            if dst != "wan":
+                continue
+            verdict = VERDICTS.get(action, "drop")
+            lines.append(f"        iifname @zone_{src} oifname \"{pattern}\" "
+                         f"counter {verdict} comment \"{src}->tunnel\"")
+
     lines.append("        counter drop")
     lines.append("    }")
     return lines

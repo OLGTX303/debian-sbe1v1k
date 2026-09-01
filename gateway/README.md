@@ -282,12 +282,14 @@ Implemented and exercised by the tests above:
 * 240 MHz on 5 GHz via EHT preamble puncturing, capability-gated
 * clients: merged DHCP/ARP/NDP/FDB/wireless view, naming, blocking, fixed IP
 * telemetry with bounded retention, events, SSE stream
-* Suricata application identification with per-client totals and UniFi DPI stats
+* Suricata application/service identification from protocol, TLS SNI and HTTP
+  Host metadata, with per-client/category totals, engine health and UniFi DPI stats
 * UniFi gateway discovery/inform plus transactional Network API synchronization
 * auth: scrypt passwords, sessions, CSRF, rate limiting, TOTP, API tokens, RBAC
 * transactional config, revisions, rollback, audit; config backup/restore
 * UI covering the spec's navigation tree, in light and dark themes, using the
-  UniFi Network palette and metrics taken from the shipped UCG-Fiber bundle
+  UniFi Network palette and metrics taken from the shipped UCG-Fiber bundle;
+  the overview includes a live physical port face driven by netd PHY state
 
 Not implemented yet — the API and UI do not pretend otherwise:
 
@@ -297,5 +299,7 @@ Not implemented yet — the API and UI do not pretend otherwise:
 * **IDS/IPS**: DPI is integrated, but blocking/signature enforcement is not
 * **PPSK, AFC, SD-WAN, mDNS reflector and UPnP**
 * **PPPoE** needs the `ppp`/`pppoe` packages added to the rootfs
-* Hardware offload is *detected and explained* but the NSS/PPE/ECM modules are
-  not loaded by this build, so traffic is software-forwarded today
+* QSDK 6.6 NSS/PPE/ECM modules and vendor IPQ9574 10 GbE host tuning are staged.
+  Hardware offload remains off by default because it broke client forwarding on
+  the measured VLAN-filtering topology. When explicitly enabled with DPI, ECM
+  holds the first 25 packets in the host path for application classification.

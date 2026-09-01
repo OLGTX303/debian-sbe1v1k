@@ -522,7 +522,11 @@ check("DPI is a first-class primary navigation section",
       "id: 'dpi', name: 'DPI', ico: 'spectrum', featured: true" in _app)
 check("the DPI page shows production traffic summaries",
       "Deep Packet Inspection" in _app and "Identified traffic" in _app
-      and "Active clients" in _app and "Share" in _app)
+      and "Active clients" in _app and "Share" in _app
+      and "Categories" in _app and "Accepted flows" in _app)
+check("dashboard renders a live physical port panel",
+      "function portMap(ports)" in _app and "port-jack" in _app
+      and "Live link, negotiated speed and traffic" in _app)
 check("the controller API key is a password field",
       "type: 'password', value: ''" in _app and "Network API key" in _app)
 
