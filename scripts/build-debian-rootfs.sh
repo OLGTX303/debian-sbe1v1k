@@ -796,6 +796,54 @@ done
 #
 # Nothing here needs them: Docker and every other consumer go through
 # /usr/sbin/iptables, which is now iptables-nft.
+# --- ShellCrash, pre-installed
+# Two things made it fail on this board, both avoidable and both pre-empted
+# here rather than left for the user to hit again:
+#
+#  1. Its pre-start check pings 223.5.5.5 / 1.2.4.8 / dns.alidns.com / doh.pub
+#     and aborts if none answer. This WAN filters ICMP to every public address
+#     while TCP works fine, so the check failed on a router that was online.
+#     Measured: ping to all four blocked, http to 1.1.1.1 returned 301.
+#  2. After any failed start it leaves /etc/ShellCrash/.start_error, and
+#     bfstart.sh exits 1 while that file exists -- so the first failure became
+#     permanent and masked whatever fixed the original cause.
+mkdir -p /etc/ShellCrash/configs
+if curl -kfsSL --connect-timeout 20 -o /tmp/shellcrash.tar.gz \
+        https://codeload.github.com/juewuy/ShellCrash/tar.gz/refs/heads/master; then
+    tar -xzf /tmp/shellcrash.tar.gz -C /tmp
+    if [ -d /tmp/ShellCrash-master/bin ]; then
+        cp -a /tmp/ShellCrash-master/bin/. /etc/ShellCrash/
+    else
+        cp -a /tmp/ShellCrash-master/. /etc/ShellCrash/
+    fi
+    rm -rf /tmp/shellcrash.tar.gz /tmp/ShellCrash-master
+    chmod -R 0755 /etc/ShellCrash 2>/dev/null || true
+    echo "[*] ShellCrash pre-installed into /etc/ShellCrash"
+else
+    echo "[!] could not fetch ShellCrash; install it on the device with its own installer" >&2
+fi
+# Ship the ICMP precheck disabled. Harmless where ICMP works, essential here.
+touch /etc/ShellCrash/configs/ShellCrash.cfg
+sed -i '/^network_check=/d' /etc/ShellCrash/configs/ShellCrash.cfg
+echo 'network_check=OFF' >> /etc/ShellCrash/configs/ShellCrash.cfg
+rm -f /etc/ShellCrash/.start_error
+# Clear the sticky failure flag on every boot so one bad start cannot wedge it
+# permanently. Ordered before the service so it runs whether or not ShellCrash
+# is enabled; ConditionPathExists keeps it silent when ShellCrash is absent.
+cat > /etc/systemd/system/shellcrash-unwedge.service <<'UNWEDGE'
+[Unit]
+Description=Clear ShellCrash's sticky start-failure flag
+ConditionPathExists=/etc/ShellCrash
+Before=shellcrash.service
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/rm -f /etc/ShellCrash/.start_error
+[Install]
+WantedBy=multi-user.target
+UNWEDGE
+systemctl enable shellcrash-unwedge.service 2>/dev/null || true
+
 install -d /etc/modprobe.d
 cat > /etc/modprobe.d/sbe1v1k-single-netfilter.conf <<'MODBLK'
 # One netfilter backend only: nftables. The legacy ip_tables engine would

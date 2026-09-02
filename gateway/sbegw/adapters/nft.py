@@ -281,6 +281,15 @@ def _render_forward_chain(cfg: dict[str, Any], fw: dict[str, Any],
             verdict = VERDICTS.get(action, "drop")
             lines.append(f"        iifname @zone_{src} oifname \"{pattern}\" "
                          f"counter {verdict} comment \"{src}->tunnel\"")
+    # ...and the return direction. A transparent proxy does not merely forward
+    # the client's flow: its core terminates the connection and originates a NEW
+    # one, so the traffic coming back out of the tunnel toward the LAN is not
+    # "established,related" with respect to anything conntrack saw on the way in.
+    # Without this it lands on the policy drop at the bottom of the chain, which
+    # is the traffic disappearing the moment a TUN proxy is switched on.
+    for pattern in fw.get("tunnel_interfaces", []) or []:
+        lines.append(f"        iifname \"{pattern}\" counter accept "
+                     f"comment \"tunnel->any\"")
 
     lines.append("        counter drop")
     lines.append("    }")

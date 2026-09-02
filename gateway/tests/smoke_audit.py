@@ -1178,6 +1178,20 @@ for _z in ("guest", "iot", "containers"):
           and f'iifname @zone_{_z} counter accept comment' not in _inp,
           f"{_z} must not have been widened too")
 
+# --- tunnel return traffic must not hit the policy drop
+# A transparent proxy terminates the client's flow and originates a new one, so
+# what comes back out of the tunnel is not established,related with respect to
+# anything conntrack saw inbound. Without an explicit accept it lands on the
+# catch-all drop -- traffic vanishing the moment a TUN proxy is enabled.
+_tn = _tun_nft.render(_tun_schema.default_config(), _tun_zi, {"wan1": "eth3"})
+_tf = _tn.split("chain forward")[1].split("chain output")[0]
+check("traffic out of a tunnel is accepted, not dropped",
+      'iifname "utun*" counter accept' in _tf,
+      "proxy-originated return traffic would hit the policy drop")
+check("the catch-all drop is still the last rule",
+      [l.strip() for l in _tf.strip().splitlines() if l.strip()][-2] == "counter drop",
+      "the tunnel accept must not displace the default deny")
+
 print(f"\n{len(PASSED)} passed, {len(FAILED)} failed")
 if FAILED:
     print("failed: " + ", ".join(FAILED))
