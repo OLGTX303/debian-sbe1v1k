@@ -172,17 +172,20 @@ def _render_input_chain(cfg: dict[str, Any],
             continue
         action = VERDICTS.get(policies.get(f"{zone}->gateway", "reject"), "reject")
         if action == "accept":
-            # A zone allowed to reach the gateway still only gets the services
-            # the gateway actually offers to it.
-            lines.append(f"        iifname @zone_{zone} udp dport {{ 53, 67, 123 }} "
-                         "counter accept")
-            lines.append(f"        iifname @zone_{zone} tcp dport {{ 53 }} counter accept")
-            lines.append(f"        iifname @zone_{zone} tcp dport {{ 443, 80 }} "
-                         "counter accept comment \"management UI\"")
-            if services.get("ssh", {}).get("enabled"):
-                port = services["ssh"].get("port", 22)
-                lines.append(f"        iifname @zone_{zone} tcp dport {port} "
-                             "counter accept comment \"ssh\"")
+            # A zone whose policy toward the gateway is "allow" reaches every
+            # port on it, which is how an ordinary home router behaves and what
+            # third-party software expects. The previous behaviour allowed only
+            # the handful of services this control plane knows about (DNS, DHCP,
+            # NTP, the UI and SSH), so anything else a user installed on the
+            # router -- a proxy dashboard, a speed test, a container -- was
+            # unreachable from the LAN until someone hand-wrote a firewall rule.
+            # ShellCrash's dashboard on :9999 is exactly that case.
+            #
+            # This does NOT widen the WAN: zone_wan is dropped further down, and
+            # a zone set to reject/drop toward the gateway still gets only DNS
+            # and DHCP. It only means "allow" now means allow.
+            lines.append(f"        iifname @zone_{zone} counter accept "
+                         f"comment \"{zone}->gateway: all ports\"")
         else:
             # Restricted zones still need DNS/DHCP or clients cannot get online.
             lines.append(f"        iifname @zone_{zone} udp dport {{ 53, 67 }} "

@@ -1160,6 +1160,24 @@ check("hairpin matches the network address, not the gateway host",
       _hair and "192.168.2.0/24" in _hair[0] and "192.168.2.1/24" not in _hair[0],
       str(_hair))
 
+# --- "allow" toward the gateway must mean every port
+# Software a user installs on the router (a proxy dashboard, a speed test)
+# listens on ports this control plane does not know about. Allowing only its
+# own services made those unreachable from the LAN without a hand-written rule.
+_in_rs = _tun_nft.render(_tun_schema.default_config(), _tun_zi, {"wan1": "eth3"})
+_inp = _in_rs.split("chain input")[1].split("chain forward")[0]
+check("an allowed zone reaches the gateway on all ports",
+      'iifname @zone_lan counter accept' in _inp,
+      "a dashboard on an arbitrary port would be unreachable")
+# Widening the LAN must not widen anything else.
+check("the WAN still cannot reach the gateway",
+      'iifname @zone_wan counter drop' in _inp, _inp)
+for _z in ("guest", "iot", "containers"):
+    check(f"{_z} is still restricted to dns/dhcp",
+          f'iifname @zone_{_z} udp dport {{ 53, 67 }}' in _inp
+          and f'iifname @zone_{_z} counter accept comment' not in _inp,
+          f"{_z} must not have been widened too")
+
 print(f"\n{len(PASSED)} passed, {len(FAILED)} failed")
 if FAILED:
     print("failed: " + ", ".join(FAILED))
