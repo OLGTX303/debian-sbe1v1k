@@ -896,7 +896,6 @@ class WanManager:
         return None
 
     @staticmethod
-    @staticmethod
     def _tcp_probe(targets: list[str], iface: str, port: int = 443,
                    timeout: float = 2.0) -> float | None:
         """Round-trip time of a TCP handshake, or None if none succeeded.
